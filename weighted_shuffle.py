@@ -16,6 +16,7 @@ MIN_SCORE = -1
 DEFAULT_SCORE = 2
 MAX_SCORE = 15
 DISABLE_WEIGHTED_SHUFFLE_THRESHOLD = 0.3 # % of the time to let cmus handle the next song
+MAX_QUEUE_SIZE = 20
 
 ####################
 # Database
@@ -135,6 +136,9 @@ def get_playing_chance(score):
 def add_to_queue(song_path, prepend=False):
     # Check if song is already in the queue
     queue = subprocess.check_output(['cmus-remote', '-C', 'save -q -']).decode('utf-8').strip().split('\n')
+    if len(queue) >= MAX_QUEUE_SIZE:
+        log(f"Queue is full, skipping adding {song_path}")
+        return
     tries = 0
     while song_path in queue and tries < 10:
         song_path = get_weighted_shuffled_song()['path']

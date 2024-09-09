@@ -133,7 +133,7 @@ def get_playing_chance(score):
     total_computed_score = sum(2**song['score'] for song in songs)
     return (2**score) / total_computed_score
 
-def add_to_queue(song_path, prepend=False):
+def add_to_queue(song_path):
     # Check if song is already in the queue
     queue = subprocess.check_output(['cmus-remote', '-C', 'save -q -']).decode('utf-8').strip().split('\n')
     if len(queue) >= MAX_QUEUE_SIZE:
@@ -144,12 +144,8 @@ def add_to_queue(song_path, prepend=False):
         song_path = get_weighted_shuffled_song()['path']
         tries += 1
     # Add song to queue
-    if prepend:
-        subprocess.run(['cmus-remote', '-C', f"add -Q {song_path}"], check=True)
-        log(f"Prepended to queue: {song_path}")
-    else:
-        subprocess.run(['cmus-remote', '-q', song_path], check=True)
-        log(f"Added to queue: {song_path}")
+    subprocess.run(['cmus-remote', '-q', song_path], check=True)
+    log(f"Added to queue: {song_path}")
 
 ####################
 # Main Functions
@@ -179,6 +175,11 @@ def handle_state_change(new_state):
     # Insert the new status change into the state_changes table
     sql_tmp("""INSERT INTO state_changes (path, status, position, duration, timestamp)
         VALUES (?, ?, ?, ?, ?)""", (path, status, position, duration, datetime.now()))
+
+    ignore_flags = sql_fetch_tmp("SELECT * FROM flag_stack WHERE flag='ignore' ORDER BY timestamp DESC LIMIT 1")
+    if len(ignore_flags) > 0:
+        sql_tmp("DELETE FROM flag_stack WHERE flag_id=?", (ignore_flags[0]['flag_id'],))
+        return
 
     # If the song has changed, add the previous song to the queue history
     sql_tmp("INSERT INTO queue_history (path, timestamp) VALUES (?, ?)", 
@@ -229,7 +230,8 @@ def handle_previous():
     sql_tmp("DELETE FROM queue_history ORDER BY timestamp DESC LIMIT 1")
 
     # Prepend the currently playing song to the cmus queue
-    add_to_queue(current_song, prepend=True)
+    subprocess.run(['cmus-remote', '-C', f"add -Q {current_song}"], check=True)
+    log(f"Prepended to queue: {current_song}")
 
     # Play the previous song
     subprocess.run(['cmus-remote', '-C', f"player-play {previous_song}"], check=True)
@@ -274,14 +276,9 @@ def main():
                 sql_tmp("INSERT INTO flag_stack (flag_id, flag, timestamp) VALUES (?, ?, ?)", (new_notification_id, "notification_id", datetime.now()))
 
         else:
-            results = sql_fetch_tmp("SELECT * FROM flag_stack WHERE flag='ignore' ORDER BY timestamp DESC LIMIT 1")
-            if len(results) > 0:
-                sql_tmp("DELETE FROM flag_stack WHERE flag_id=?", (results[0]['flag_id'],))
-                return
-            
-            log("------------------------")
             cmus_state = get_cmus_current_state()
             handle_state_change(cmus_state)
+            log("------------------------")
 
     except Exception as e:
         import traceback

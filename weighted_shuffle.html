@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weighted Shuffle Music Player</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.11.0/sql-wasm.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        button { margin: 5px; }
+        audio { width: 100%; }
+        #playlist { list-style-type: none; padding: 0; }
+        #playlist li { margin: 5px 0; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        .edit-score { width: 50px; }
+    </style>
+</head>
+<body>
+    <h1>Weighted Shuffle Music Player</h1>
+    <input type="file" id="fileInput" multiple accept="audio/*">
+    <button id="playPause">Play/Pause</button>
+    <button id="next">Next</button>
+    <button id="previous">Previous</button>
+    <button id="upvote">Upvote</button>
+    <button id="downvote">Downvote</button>
+    <h2>Now Playing: <span id="nowPlaying"></span></h2>
+    <audio id="audioPlayer" controls></audio>
+    <h3>Playlist:</h3>
+    <table id="playlistTable">
+        <thead>
+            <tr>
+                <th>Path</th>
+                <th>Score</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+    <h3>Saved Songs:</h3>
+    <table id="library">
+        <thead>
+            <tr>
+                <th>Path</th>
+                <th>Score</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+
+    <script>
+        (async () => {
+
+            // Configuration
+            const MIN_SCORE = -1;
+            const DEFAULT_SCORE = 2;
+            const MAX_SCORE = 15;
+            const DISABLE_WEIGHTED_SHUFFLE_THRESHOLD = 0.3;
+            const MAX_PLAYLIST_SIZE = 20;
+
+            
+            let audioPlayer = document.getElementById('audioPlayer');
+            let playlist = [];
+            let currentIndex = 0;
+
+            // Initialize OPFS and SQL.js
+            const root = await navigator.storage.getDirectory();
+
+            async function readFile(path) {
+                const fileHandle = await root.getFileHandle(path);
+                return await fileHandle.getFile();
+            }
+
+            async function writeFile(path, data) {
+                const fileHandle = await root.getFileHandle(path, { create: true });
+                const writable = await fileHandle.createWritable();
+                await writable.write(data);
+                await writable.close();
+            }
+
+            // Initialize database
+            const SQL = await initSqlJs({
+                locateFile: filename => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.11.0/${filename}`
+            });
+            const dbFile = await readFile('music_db.sqlite');
+            const arrayBuffer = await dbFile.arrayBuffer();
+            const db = arrayBuffer.byteLength > 0
+                ? new SQL.Database(new Uint8Array(arrayBuffer))
+                : new SQL.Database();
+            db.run(/*sql*/`
+            CREATE TABLE IF NOT EXISTS song_scores (
+                path TEXT PRIMARY KEY,
+                score INTEGER,
+                last_played TIMESTAMP
+            )`);
+
+            async function updateLibrary() {
+                const songs = db.exec(/*sql*/`SELECT path, score FROM song_scores ORDER BY score DESC`);
+                const tableBody = document.querySelector('#library tbody');
+                tableBody.innerHTML = '';
+
+                if (songs.length > 0 && songs[0].values.length > 0) {
+                    songs[0].values.forEach(([path, score]) => {
+                        const row = tableBody.insertRow();
+                        row.insertCell(0).textContent = path;
+                        row.insertCell(1).innerHTML = /*html*/`<input type="number" class="edit-score" value="${score}" min="${MIN_SCORE}" max="${MAX_SCORE}">`;
+                        row.insertCell(2).innerHTML = /*html*/`<button class="delete-song">Delete</button>`;
+                    });
+                }
+
+                // add event listeners to the edit-score inputs
+                document.querySelectorAll('.edit-score').forEach(input => {
+                    input.addEventListener('change', async (event) => {
+                        const row = event.target.closest('tr');
+                        const path = row.cells[0].textContent;
+                        const newScore = parseInt(event.target.value);
+                        await updateScore(path, newScore - getSongScore(path));
+                    });
+                });
+
+                // add event listeners to the delete-song buttons
+                document.querySelectorAll('.delete-song').forEach(button => {
+                    button.addEventListener('click', async (event) => {
+                        const row = event.target.closest('tr');
+                        const path = row.cells[0].textContent;
+                        db.run(`DELETE FROM song_scores WHERE path = ?`, [path]);
+                        await saveDatabase();
+                        playlist = playlist.filter(song => song !== path);
+                        updatePlaylistUI();
+                        if (audioPlayer.src.includes(path)) {
+                            playNext();
+                        }
+                    });
+                });
+            }
+            await updateLibrary();
+
+            async function saveDatabase() {
+                const data = db.export();
+                await writeFile('music_db.sqlite', data);
+                await updateLibrary();
+            }
+
+            function getWeightedShuffledSong() {
+                const songs = db.exec(/*sql*/`SELECT path, score FROM song_scores ORDER BY score DESC`);
+                if (songs.length === 0 || songs[0].values.length === 0) return null;
+                
+                const totalComputedScore = songs[0].values.reduce((sum, song) => sum + Math.pow(2, song[1]), 0);
+                let r = Math.random() * totalComputedScore;
+                for (let song of songs[0].values) {
+                    r -= 2 ** song[1];
+                    if (r <= 0) return song[0];
+                }
+                return songs[0].values[Math.floor(Math.random() * songs[0].values.length)][0];
+            }
+
+            function FillPlaylist() {
+                let maxTries = 10;
+                while (playlist.length < MAX_PLAYLIST_SIZE) {
+                    let newSong = getWeightedShuffledSong();
+                    if (!newSong) return console.log("No songs in library");
+
+                    if (!playlist.includes(newSong) || maxTries-- <= 0) {
+                        playlist.push(newSong);
+                    }
+                }
+                updatePlaylistUI();
+            }
+
+            function updatePlaylistUI() {
+                const playlistTableBody = document.querySelector('#playlistTable tbody');
+                const fragment = document.createDocumentFragment();
+
+                playlist.forEach((song, index) => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = /*html*/`
+                        <td>${song}</td>
+                        <td><input type="number" class="edit-score" value="${getSongScore(song)}" min="${MIN_SCORE}" max="${MAX_SCORE}"></td>
+                        <td><button class="delete-from-playlist">Delete</button></td>
+                    `;
+                    if (index === currentIndex) row.style.fontWeight = 'bold';
+                    fragment.appendChild(row);
+                });
+
+                playlistTableBody.innerHTML = '';
+                playlistTableBody.appendChild(fragment);
+
+                // add event listeners to the delete-from-playlist buttons
+                document.querySelectorAll('.delete-from-playlist').forEach(button => {
+                    button.addEventListener('click', async (event) => {
+                        const row = event.target.closest('tr');
+                        const path = row.cells[0].textContent;
+                        playlist = playlist.filter(song => song !== path);
+                        updatePlaylistUI();
+                        FillPlaylist();
+                    });
+                });
+
+                // add event listeners to the edit-score inputs
+                document.querySelectorAll('.edit-score').forEach(input => {
+                    input.addEventListener('change', async (event) => {
+                        const row = event.target.closest('tr');
+                        const path = row.cells[0].textContent;
+                        const newScore = parseInt(event.target.value);
+                        await updateScore(path, newScore - getSongScore(path));
+                    });
+                });
+            }
+
+            function getSongScore(path) {
+                const result = db.exec(/*sql*/`SELECT score FROM song_scores WHERE path = ? LIMIT 1`, [path]);
+                return result.length > 0 && result[0].values.length > 0 ? result[0].values[0][0] : DEFAULT_SCORE;
+            }
+
+            async function playSong(path) {
+                const file = await readFile(path);
+                audioPlayer.src = URL.createObjectURL(file);
+                audioPlayer.play();
+                document.getElementById('nowPlaying').textContent = path;
+                updatePlaylistUI();
+                updateMediaSessionMetadata(path);
+            }
+
+            function playNext() {
+                currentIndex = (currentIndex + 1) % playlist.length;
+                if (playlist[currentIndex]) {
+                    playSong(playlist[currentIndex]);
+                    FillPlaylist();
+                }
+            }
+
+            function playPrevious() {
+                currentIndex = (currentIndex - 1 + playlist.length) % playlist.length;
+                if (playlist[currentIndex]) {
+                    playSong(playlist[currentIndex]);
+                }
+            }
+
+            async function updateScore(path, increment) {
+                const result = db.exec(/*sql*/`SELECT score FROM song_scores WHERE path = ?`, [path]);
+                let score = result.length > 0 && result[0].values.length > 0 ? result[0].values[0][0] : DEFAULT_SCORE;
+                let newScore = Math.max(MIN_SCORE, Math.min(MAX_SCORE, score + increment));
+                db.run(/*sql*/`INSERT OR REPLACE INTO song_scores (path, score, last_played) VALUES (?, ?, ?)`, 
+                    [path, newScore, Date.now()]);
+                await saveDatabase();
+                updatePlaylistUI();
+                return newScore;
+            }
+
+            /**********************
+             * EVENT LISTENERS
+             **********************/
+
+            document.getElementById('fileInput').addEventListener('change', async (event) => {
+                for (let file of event.target.files) {
+                    await writeFile(file.name, await file.arrayBuffer());
+                    
+                    db.run(/*sql*/`INSERT OR IGNORE INTO song_scores (path, score, last_played) VALUES (?, ?, ?)`, 
+                        [file.name, DEFAULT_SCORE, Date.now()]);
+                    if (playlist.length < MAX_PLAYLIST_SIZE) {
+                        playlist.push(file.name);
+                    }
+                }
+                await saveDatabase();
+                updatePlaylistUI();
+                if (!audioPlayer.src) playSong(playlist[0]);
+            });
+
+            document.getElementById('playPause').addEventListener('click', () => audioPlayer.paused ? audioPlayer.play() : audioPlayer.pause());
+            document.getElementById('next').addEventListener('click', playNext);
+            document.getElementById('previous').addEventListener('click', playPrevious);
+
+            document.getElementById('upvote').addEventListener('click', async () => {
+                if (audioPlayer.src) {
+                    const path = playlist[currentIndex];
+                    const newScore = await updateScore(path, 1);
+                    console.log(`Upvoted. New score: ${newScore}`);
+                }
+            });
+
+            document.getElementById('downvote').addEventListener('click', async () => {
+                if (audioPlayer.src) {
+                    const path = playlist[currentIndex];
+                    const newScore = await updateScore(path, -1);
+                    console.log(`Downvoted. New score: ${newScore}`);
+                }
+            });
+
+            audioPlayer.addEventListener('ended', playNext);
+
+            /**********************
+             * SETUP
+             **********************/
+
+            FillPlaylist();
+            // print library
+            const songs = db.exec(/*sql*/`SELECT * FROM song_scores`);
+            console.log(songs);
+
+            // list all songs in OPFS
+            const files = await root.entries()
+            for await (const [name, handle] of files) {
+                console.log(name);
+            }
+
+            // Media Session API
+            navigator.mediaSession.setActionHandler('nexttrack', playNext);
+            navigator.mediaSession.setActionHandler('previoustrack', playPrevious);
+            navigator.mediaSession.setActionHandler('seekforward', () => audioPlayer.currentTime += 10);
+            navigator.mediaSession.setActionHandler('seekbackward', () => audioPlayer.currentTime -= 10);
+
+            function updateMediaSessionMetadata(title) {
+                navigator.mediaSession.metadata = new MediaMetadata({ title });
+            }
+        })();
+    </script>
+</body>
+</html>

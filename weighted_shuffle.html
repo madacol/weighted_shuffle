@@ -53,19 +53,24 @@
     <script>
         (async () => {
 
-            // Configuration
+            /**********************
+             * CONSTANTS
+             **********************/
+
             const MIN_SCORE = -1;
             const DEFAULT_SCORE = 2;
             const MAX_SCORE = 15;
             const DISABLE_WEIGHTED_SHUFFLE_THRESHOLD = 0.3;
             const MAX_PLAYLIST_SIZE = 20;
 
-            
             let audioPlayer = document.getElementById('audioPlayer');
-            let playlist = [];
+            const playlist = [];
             let currentIndex = 0;
 
-            // Initialize OPFS and SQL.js
+            /**********************
+             * OPFS
+             **********************/
+
             const root = await navigator.storage.getDirectory();
 
             async function readFile(path) {
@@ -80,7 +85,10 @@
                 await writable.close();
             }
 
-            // Initialize database
+            /**********************
+             * SETUP DATABASE
+             **********************/
+
             const SQL = await initSqlJs({
                 locateFile: filename => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.11.0/${filename}`
             });
@@ -102,6 +110,10 @@
                 last_played TIMESTAMP
             )`);
 
+            /**********************
+             * HELPER FUNCTIONS
+             **********************/
+
             async function updateLibrary() {
                 const songs = db.exec(/*sql*/`SELECT path, score FROM song_scores ORDER BY score DESC`);
                 const tableBody = document.querySelector('#library tbody');
@@ -116,7 +128,7 @@
                     });
                 }
 
-                // add event listeners to the edit-score inputs
+                // add event listeners
                 document.querySelectorAll('.edit-score').forEach(input => {
                     input.addEventListener('change', async (event) => {
                         const row = event.target.closest('tr');
@@ -125,8 +137,6 @@
                         await updateScore(path, newScore - getSongScore(path));
                     });
                 });
-
-                // add event listeners to the delete-song buttons
                 document.querySelectorAll('.delete-song').forEach(button => {
                     button.addEventListener('click', async (event) => {
                         const row = event.target.closest('tr');
@@ -152,7 +162,7 @@
             function getWeightedShuffledSong() {
                 const songs = db.exec(/*sql*/`SELECT path, score FROM song_scores ORDER BY score DESC`);
                 if (songs.length === 0 || songs[0].values.length === 0) return null;
-                
+
                 const totalComputedScore = songs[0].values.reduce((sum, song) => sum + Math.pow(2, song[1]), 0);
                 let r = Math.random() * totalComputedScore;
                 for (let song of songs[0].values) {
@@ -193,7 +203,7 @@
                 playlistTableBody.innerHTML = '';
                 playlistTableBody.appendChild(fragment);
 
-                // add event listeners to the delete-from-playlist buttons
+                // add event listeners
                 document.querySelectorAll('.delete-from-playlist').forEach(button => {
                     button.addEventListener('click', async (event) => {
                         const row = event.target.closest('tr');
@@ -203,8 +213,6 @@
                         FillPlaylist();
                     });
                 });
-
-                // add event listeners to the edit-score inputs
                 document.querySelectorAll('.edit-score').forEach(input => {
                     input.addEventListener('change', async (event) => {
                         const row = event.target.closest('tr');
@@ -262,7 +270,7 @@
             document.getElementById('fileInput').addEventListener('change', async (event) => {
                 for (let file of event.target.files) {
                     await writeFile(file.name, await file.arrayBuffer());
-                    
+
                     db.run(/*sql*/`INSERT OR IGNORE INTO song_scores (path, score, last_played) VALUES (?, ?, ?)`, 
                         [file.name, DEFAULT_SCORE, Date.now()]);
                     if (playlist.length < MAX_PLAYLIST_SIZE) {
@@ -305,11 +313,9 @@
             const songs = db.exec(/*sql*/`SELECT * FROM song_scores`);
             console.log(songs);
 
-            // list all songs in OPFS
+            // print all files in OPFS
             const files = await root.entries()
-            for await (const [name, handle] of files) {
-                console.log(name);
-            }
+            console.log('Files on OPFS:', await Array.fromAsync(files))
 
             // Media Session API
             navigator.mediaSession.setActionHandler('nexttrack', playNext);

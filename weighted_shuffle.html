@@ -84,7 +84,13 @@
             const SQL = await initSqlJs({
                 locateFile: filename => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.11.0/${filename}`
             });
-            const dbFile = await readFile('music_db.sqlite');
+            const dbFile = await readFile('music_db.sqlite').catch(error => {
+                if (error.name === 'NotFoundError') {
+                    console.log(`File ${'music_db.sqlite'} not found. Creating a new one.`);
+                    return new File([], 'music_db.sqlite');
+                }
+                throw error;
+            });
             const arrayBuffer = await dbFile.arrayBuffer();
             const db = arrayBuffer.byteLength > 0
                 ? new SQL.Database(new Uint8Array(arrayBuffer))

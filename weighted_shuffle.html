@@ -19,7 +19,7 @@
 </head>
 <body>
     <h1>Weighted Shuffle Music Player</h1>
-    <input type="file" id="fileInput" multiple accept="audio/*">
+    <button id="selectFolder">Select Music Folder</button>
     <button id="playPause">Play/Pause</button>
     <button id="next">Next</button>
     <button id="previous">Previous</button>
@@ -64,51 +64,106 @@
             const MAX_PLAYLIST_SIZE = 20;
 
             let audioPlayer = document.getElementById('audioPlayer');
-            const playlist = [];
+            let playlist = [];
             let currentIndex = 0;
+            let musicFolderHandle = null;
+            let db = null;
 
             /**********************
-             * OPFS
+             * FILE SYSTEM ACCESS
              **********************/
 
-            const root = await navigator.storage.getDirectory();
+            async function getFiles(dirHandle, path = "") {
+                const files = [];
+                const audioExtensions = ['.mp3', '.wav', '.ogg', '.flac', '.m4a', '.aac', '.opus', '.wma', '.ape', '.alac', '.aiff', '.mid', '.midi'];
 
-            async function readFile(path) {
-                const fileHandle = await root.getFileHandle(path);
-                return await fileHandle.getFile();
+                for await (const entry of dirHandle.values()) {
+                    if (entry.kind === "file") {
+                        const fileName = entry.name.toLowerCase();
+                        const fileExtension = '.' + fileName.split('.').pop();
+
+                        if (audioExtensions.includes(fileExtension)) {
+                            files.push(`${path}${entry.name}`);
+                        } else {
+                            try {
+                                const file = await entry.getFile();
+                                if (file.type.startsWith('audio/')) {
+                                    files.push(`${path}${entry.name}`);
+                                }
+                            } catch (error) {
+                                console.warn(`Error checking file type for ${entry.name}:`, error);
+                            }
+                        }
+                    } else if (entry.kind === "directory") {
+                        files.push(...await getFiles(entry, `${path}${entry.name}/`));
+                    }
+                }
+                return files;
             }
 
-            async function writeFile(path, data) {
-                const fileHandle = await root.getFileHandle(path, { create: true });
-                const writable = await fileHandle.createWritable();
-                await writable.write(data);
-                await writable.close();
+            async function loadMusicFolder() {
+                try {
+                    musicFolderHandle = await window.showDirectoryPicker({mode: 'readwrite'});
+                    await setupDatabase();
+                    const musicFiles = await getFiles(musicFolderHandle);
+
+                    // Add new songs to the database
+                    for (const file of musicFiles) {
+                        db.run(/*sql*/`INSERT OR IGNORE INTO song_scores (path, score, last_played) VALUES (?, ?, ?)`,
+                            [file, DEFAULT_SCORE, Date.now()]);
+                    }
+
+                    await saveDatabase();
+                    FillPlaylist();
+                    if (!audioPlayer.src && playlist.length > 0) playSong(playlist[0]);
+                } catch (err) {
+                    console.error("Error loading music folder:", err);
+                }
             }
 
             /**********************
              * SETUP DATABASE
              **********************/
 
-            const SQL = await initSqlJs({
-                locateFile: filename => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.11.0/${filename}`
-            });
-            const dbFile = await readFile('music_db.sqlite').catch(error => {
-                if (error.name === 'NotFoundError') {
-                    console.log(`File ${'music_db.sqlite'} not found. Creating a new one.`);
-                    return new File([], 'music_db.sqlite');
+            async function setupDatabase() {
+                const SQL = await initSqlJs({
+                    locateFile: filename => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.11.0/${filename}`
+                });
+
+                try {
+                    const dbFileHandle = await musicFolderHandle.getFileHandle('music_db.sqlite', { create: false });
+                    const dbFile = await dbFileHandle.getFile();
+                    const arrayBuffer = await dbFile.arrayBuffer();
+                    db = new SQL.Database(new Uint8Array(arrayBuffer));
+                } catch (error) {
+                    if (error.name === 'NotFoundError') {
+                        console.log('Database file not found. Creating a new one.');
+                        db = new SQL.Database();
+                    } else {
+                        throw error;
+                    }
                 }
-                throw error;
-            });
-            const arrayBuffer = await dbFile.arrayBuffer();
-            const db = arrayBuffer.byteLength > 0
-                ? new SQL.Database(new Uint8Array(arrayBuffer))
-                : new SQL.Database();
-            db.run(/*sql*/`
-            CREATE TABLE IF NOT EXISTS song_scores (
-                path TEXT PRIMARY KEY,
-                score INTEGER,
-                last_played TIMESTAMP
-            )`);
+
+                db.run(/*sql*/`
+                CREATE TABLE IF NOT EXISTS song_scores (
+                    path TEXT PRIMARY KEY,
+                    score INTEGER,
+                    last_played TIMESTAMP
+                )`);
+
+                return db;
+            }
+
+            async function saveDatabase() {
+                if (!db || !musicFolderHandle) return;
+
+                const data = db.export();
+                const dbFileHandle = await musicFolderHandle.getFileHandle('music_db.sqlite', { create: true });
+                const writable = await dbFileHandle.createWritable();
+                await writable.write(data);
+                await writable.close();
+                await updateLibrary();
+            }
 
             /**********************
              * HELPER FUNCTIONS
@@ -150,13 +205,6 @@
                         }
                     });
                 });
-            }
-            await updateLibrary();
-
-            async function saveDatabase() {
-                const data = db.export();
-                await writeFile('music_db.sqlite', data);
-                await updateLibrary();
             }
 
             function getWeightedShuffledSong() {
@@ -229,7 +277,15 @@
             }
 
             async function playSong(path) {
-                const file = await readFile(path);
+                if (!musicFolderHandle) return;
+                const pathParts = path.split('/');
+                let fileHandle = musicFolderHandle;
+                for (const part of pathParts) {
+                    if (part) {
+                        fileHandle = await fileHandle.getDirectoryHandle(part).catch(() => fileHandle.getFileHandle(part));
+                    }
+                }
+                const file = await fileHandle.getFile();
                 audioPlayer.src = URL.createObjectURL(file);
                 audioPlayer.play();
                 document.getElementById('nowPlaying').textContent = path;
@@ -267,21 +323,7 @@
              * EVENT LISTENERS
              **********************/
 
-            document.getElementById('fileInput').addEventListener('change', async (event) => {
-                for (let file of event.target.files) {
-                    await writeFile(file.name, await file.arrayBuffer());
-
-                    db.run(/*sql*/`INSERT OR IGNORE INTO song_scores (path, score, last_played) VALUES (?, ?, ?)`, 
-                        [file.name, DEFAULT_SCORE, Date.now()]);
-                    if (playlist.length < MAX_PLAYLIST_SIZE) {
-                        playlist.push(file.name);
-                    }
-                }
-                await saveDatabase();
-                updatePlaylistUI();
-                if (!audioPlayer.src) playSong(playlist[0]);
-            });
-
+            document.getElementById('selectFolder').addEventListener('click', loadMusicFolder);
             document.getElementById('playPause').addEventListener('click', () => audioPlayer.paused ? audioPlayer.play() : audioPlayer.pause());
             document.getElementById('next').addEventListener('click', playNext);
             document.getElementById('previous').addEventListener('click', playPrevious);
@@ -308,14 +350,17 @@
              * SETUP
              **********************/
 
-            FillPlaylist();
-            // print library
-            const songs = db.exec(/*sql*/`SELECT * FROM song_scores`);
-            console.log(songs);
-
-            // print all files in OPFS
-            const files = await root.entries()
-            console.log('Files on OPFS:', await Array.fromAsync(files))
+            // Try to recover the music folder permission
+            if ('launchQueue' in window && 'files' in LaunchParams.prototype) {
+                launchQueue.setConsumer(async (launchParams) => {
+                    if (!launchParams.files.length) {
+                        return;
+                    }
+                    const [fileHandle] = launchParams.files;
+                    musicFolderHandle = await fileHandle.getParent();
+                    await loadMusicFolder();
+                });
+            }
 
             // Media Session API
             navigator.mediaSession.setActionHandler('nexttrack', playNext);

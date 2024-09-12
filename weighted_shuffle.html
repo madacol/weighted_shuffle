@@ -222,11 +222,11 @@
 
             function FillPlaylist() {
                 let maxTries = 10;
-                while (playlist.length < MAX_PLAYLIST_SIZE) {
+                while (playlist.length - currentIndex < MAX_PLAYLIST_SIZE) {
                     let newSong = getWeightedShuffledSong();
                     if (!newSong) return console.log("No songs in library");
 
-                    if (!playlist.includes(newSong) || maxTries-- <= 0) {
+                    if (!playlist.slice(-MAX_PLAYLIST_SIZE).includes(newSong) || maxTries-- <= 0) {
                         playlist.push(newSong);
                     }
                 }

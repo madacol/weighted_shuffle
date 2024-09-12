@@ -307,17 +307,13 @@
 
             function playNext() {
                 currentIndex = (currentIndex + 1) % playlist.length;
-                if (playlist[currentIndex]) {
-                    playSong(playlist[currentIndex]);
-                    FillPlaylist();
-                }
+                playSong(playlist[currentIndex]);
+                FillPlaylist();
             }
 
             function playPrevious() {
                 currentIndex = (currentIndex - 1 + playlist.length) % playlist.length;
-                if (playlist[currentIndex]) {
-                    playSong(playlist[currentIndex]);
-                }
+                playSong(playlist[currentIndex]);
             }
 
             async function updateScore(path, increment) {

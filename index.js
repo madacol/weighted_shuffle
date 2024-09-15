@@ -1,12 +1,7 @@
+import { initDatabase, sql, addNewSongsToDatabase, getSongScore, updateScore } from './db.js';
 import { saveDirHandle, getLastFolderHandle } from './file_handle_store.js';
-
+import { MIN_SCORE, MAX_SCORE, DEFAULT_SCORE, MAX_PLAYLIST_SIZE } from './config.js';
 (async () => {
-    // Constants
-    const MIN_SCORE = -1;
-    const DEFAULT_SCORE = 2;
-    const MAX_SCORE = 15;
-    const MAX_PLAYLIST_SIZE = 20;
-
     /** @type {HTMLAudioElement} The audio player element */
     const audioPlayer = document.getElementsByTagName('audio')[0];
 
@@ -19,10 +14,32 @@ import { saveDirHandle, getLastFolderHandle } from './file_handle_store.js';
     /** @type {FileSystemDirectoryHandle|null} The handle for the selected music folder */
     let musicFolderHandle = null;
 
-    /** @type {Database|null} The SQLite database instance */
-    let db = null;
+    // Initializes the application
+    try {
+        const lastFolderHandle = await getLastFolderHandle();
+        if (lastFolderHandle) {
+            await loadMusicFolder(lastFolderHandle);
+        }
+        updateLibrary();
+    } catch (err) {
+        console.error("Error initializing app:", err);
+    }
 
-    // File system access
+    // Sets up the Media Session API handlers
+    navigator.mediaSession.setActionHandler('nexttrack', playNext);
+    navigator.mediaSession.setActionHandler('previoustrack', playPrevious);
+    navigator.mediaSession.setActionHandler('seekforward', () => audioPlayer.currentTime += 10);
+    navigator.mediaSession.setActionHandler('seekbackward', () => audioPlayer.currentTime -= 10);
+
+    // Event Listeners
+    document.getElementById('selectFolder').addEventListener('click', async () => loadMusicFolder(await window.showDirectoryPicker({mode: 'readwrite'})));
+    document.getElementById('playPause').addEventListener('click', () => audioPlayer.paused ? audioPlayer.play() : audioPlayer.pause());
+    document.getElementById('next').addEventListener('click', playNext);
+    document.getElementById('previous').addEventListener('click', playPrevious);
+    document.getElementById('upvote').addEventListener('click', () => updateCurrentSongScore(1));
+    document.getElementById('downvote').addEventListener('click', () => updateCurrentSongScore(-1));
+    audioPlayer.addEventListener('ended', playNext);
+
     /**
      * Recursively gets all audio files in a directory
      * @param {FileSystemDirectoryHandle} dirHandle - The directory handle to search
@@ -61,15 +78,15 @@ import { saveDirHandle, getLastFolderHandle } from './file_handle_store.js';
 
     /**
      * Loads the music folder and sets up the database
+     * @param {FileSystemDirectoryHandle} folderHandle - The handle for the music folder
      */
-    async function loadMusicFolder() {
+    async function loadMusicFolder(folderHandle) {
+        musicFolderHandle = folderHandle;
         try {
-            musicFolderHandle = await window.showDirectoryPicker({mode: 'readwrite'});
-            await setupDatabase();
-            const musicFiles = await getFiles(musicFolderHandle);
+            await initDatabase(folderHandle);
+            const musicFiles = await getFiles(folderHandle);
             await addNewSongsToDatabase(musicFiles);
-            await saveDatabase();
-            await saveDirHandle(musicFolderHandle);
+            await saveDirHandle(folderHandle);
             fillPlaylist();
             if (!audioPlayer.src && playlist.length > 0) playSong(playlist[0]);
         } catch (err) {
@@ -77,66 +94,8 @@ import { saveDirHandle, getLastFolderHandle } from './file_handle_store.js';
         }
     }
 
-    /**
-     * Sets up the SQLite database
-     * @returns {Promise<Database>} The SQLite database instance
-     */
-    async function setupDatabase() {
-        const SQL = await initSqlJs({
-            locateFile: filename => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.11.0/${filename}`
-        });
-
-        try {
-            const dbFileHandle = await musicFolderHandle.getFileHandle('music_db.sqlite', { create: false });
-            const dbFile = await dbFileHandle.getFile();
-            const arrayBuffer = await dbFile.arrayBuffer();
-            db = new SQL.Database(new Uint8Array(arrayBuffer));
-        } catch (error) {
-            if (error.name === 'NotFoundError') {
-                console.log('Database file not found. Creating a new one.');
-                db = new SQL.Database();
-            } else {
-                throw error;
-            }
-        }
-
-        db.run(/*sql*/`
-        CREATE TABLE IF NOT EXISTS song_scores (
-            path TEXT PRIMARY KEY,
-            score INTEGER,
-            last_played TIMESTAMP
-        )`);
-
-        return db;
-    }
-
-    /**
-     * Saves the database to the music folder
-     */
-    async function saveDatabase() {
-        if (!db || !musicFolderHandle) return;
-
-        const data = db.export();
-        const dbFileHandle = await musicFolderHandle.getFileHandle('music_db.sqlite', { create: true });
-        const writable = await dbFileHandle.createWritable();
-        await writable.write(data);
-        await writable.close();
-        await updateLibrary();
-    }
-
-    /**
-     * Adds new songs to the database
-     * @param {string[]} musicFiles - Array of file paths
-     */
-    async function addNewSongsToDatabase(musicFiles) {
-        for (const file of musicFiles) {
-            db.run(/*sql*/`INSERT OR IGNORE INTO song_scores (path, score, last_played) VALUES (?, ?, ?)`,
-                [file, DEFAULT_SCORE, Date.now()]);
-        }
-    }
-
     async function updateLibrary() {
-        const songs = db.exec(/*sql*/`SELECT path, score FROM song_scores ORDER BY score DESC`);
+        const songs = sql(/*sql*/`SELECT path, score FROM song_scores ORDER BY score DESC`);
         /** @type {HTMLTableSectionElement} */
         const tableBody = document.querySelector('#library tbody');
         tableBody.innerHTML = '';
@@ -150,12 +109,13 @@ import { saveDirHandle, getLastFolderHandle } from './file_handle_store.js';
         }
 
         // add event listeners
-        document.querySelectorAll('.edit-score').forEach( /** @param {HTMLInputElement} input */ input => {
+        document.querySelectorAll('.edit-score').forEach(/** @param {HTMLInputElement} input */ input => {
             input.addEventListener('change', async () => {
                 const row = input.closest('tr');
                 const path = row.cells[0].textContent;
                 const newScore = parseInt(input.value);
                 await updateScore(path, newScore - getSongScore(path));
+                await updateLibrary();
             });
         });
     }
@@ -165,7 +125,7 @@ import { saveDirHandle, getLastFolderHandle } from './file_handle_store.js';
      * @returns {string|null} The path of the selected song, or null if no songs are available
      */
     function getWeightedShuffledSong() {
-        const songs = db.exec(/*sql*/`SELECT path, score FROM song_scores ORDER BY score DESC`);
+        const songs = sql(/*sql*/`SELECT path, score FROM song_scores ORDER BY score DESC`);
         if (songs.length === 0 || songs[0].values.length === 0) return null;
 
         const totalComputedScore = songs[0].values.reduce((sum, song) => sum + Math.pow(2, song[1]), 0);
@@ -212,7 +172,7 @@ import { saveDirHandle, getLastFolderHandle } from './file_handle_store.js';
         playlistTableBody.appendChild(fragment);
 
         // add event listeners
-        document.querySelectorAll('.delete-from-playlist').forEach( /** @param {HTMLButtonElement} button */ button => {
+        document.querySelectorAll('.delete-from-playlist').forEach(/** @param {HTMLButtonElement} button */ button => {
             button.addEventListener('click', async () => {
                 const row = button.closest('tr');
                 const path = row.cells[0].textContent;
@@ -221,24 +181,15 @@ import { saveDirHandle, getLastFolderHandle } from './file_handle_store.js';
                 fillPlaylist();
             });
         });
-        document.querySelectorAll('.edit-score').forEach( /** @param {HTMLInputElement} input */ input => {
+        document.querySelectorAll('.edit-score').forEach(/** @param {HTMLInputElement} input */ input => {
             input.addEventListener('change', async () => {
                 const row = input.closest('tr');
                 const path = row.cells[0].textContent;
                 const newScore = parseInt(input.value);
                 await updateScore(path, newScore - getSongScore(path));
+                await updateLibrary();
             });
         });
-    }
-
-    /**
-     * Gets the score of a song
-     * @param {string} path - The file path of the song
-     * @returns {number} The score of the song
-     */
-    function getSongScore(path) {
-        const result = db.exec(/*sql*/`SELECT score FROM song_scores WHERE path = ? LIMIT 1`, [path]);
-        return result.length > 0 && result[0].values.length > 0 ? result[0].values[0][0] : DEFAULT_SCORE;
     }
 
     /**
@@ -246,7 +197,6 @@ import { saveDirHandle, getLastFolderHandle } from './file_handle_store.js';
      * @param {string} path - The file path of the song to play
      */
     async function playSong(path) {
-        if (!musicFolderHandle) return;
         const pathParts = path.split('/');
         let folderHandle = musicFolderHandle;
         /** @type {FileSystemFileHandle} */
@@ -280,23 +230,6 @@ import { saveDirHandle, getLastFolderHandle } from './file_handle_store.js';
     }
 
     /**
-     * Updates the score of a song
-     * @param {string} path - The file path of the song
-     * @param {number} increment - The amount to increment the score by
-     * @returns {Promise<number>} The new score of the song
-     */
-    async function updateScore(path, increment) {
-        const result = db.exec(/*sql*/`SELECT score FROM song_scores WHERE path = ?`, [path]);
-        let score = result.length > 0 && result[0].values.length > 0 ? result[0].values[0][0] : DEFAULT_SCORE;
-        let newScore = Math.max(MIN_SCORE, Math.min(MAX_SCORE, score + increment));
-        db.run(/*sql*/`INSERT OR REPLACE INTO song_scores (path, score, last_played) VALUES (?, ?, ?)`, 
-            [path, newScore, Date.now()]);
-        await saveDatabase();
-        updatePlaylistUI();
-        return newScore;
-    }
-
-    /**
      * Updates the media session metadata
      * @param {string} title - The title of the current song
      */
@@ -314,37 +247,7 @@ import { saveDirHandle, getLastFolderHandle } from './file_handle_store.js';
             const path = playlist[currentIndex];
             const newScore = await updateScore(path, increment);
             console.log(`Score updated. New score: ${newScore}`);
+            await updateLibrary();
         }
     }
-
-    // Initializes the application
-    try {
-        const lastFolderHandle = await getLastFolderHandle();
-        if (lastFolderHandle) {
-            musicFolderHandle = lastFolderHandle;
-            await setupDatabase();
-            const musicFiles = await getFiles(musicFolderHandle);
-            await addNewSongsToDatabase(musicFiles);
-            await saveDatabase();
-            fillPlaylist();
-            if (!audioPlayer.src && playlist.length > 0) playSong(playlist[0]);
-        }
-    } catch (err) {
-        console.error("Error initializing app:", err);
-    }
-
-    // Sets up the Media Session API handlers
-    navigator.mediaSession.setActionHandler('nexttrack', playNext);
-    navigator.mediaSession.setActionHandler('previoustrack', playPrevious);
-    navigator.mediaSession.setActionHandler('seekforward', () => audioPlayer.currentTime += 10);
-    navigator.mediaSession.setActionHandler('seekbackward', () => audioPlayer.currentTime -= 10);
-
-    // Event Listeners
-    document.getElementById('selectFolder').addEventListener('click', loadMusicFolder);
-    document.getElementById('playPause').addEventListener('click', () => audioPlayer.paused ? audioPlayer.play() : audioPlayer.pause());
-    document.getElementById('next').addEventListener('click', playNext);
-    document.getElementById('previous').addEventListener('click', playPrevious);
-    document.getElementById('upvote').addEventListener('click', () => updateCurrentSongScore(1));
-    document.getElementById('downvote').addEventListener('click', () => updateCurrentSongScore(-1));
-    audioPlayer.addEventListener('ended', playNext);
 })();

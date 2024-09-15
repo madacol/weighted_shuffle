@@ -1,49 +1,59 @@
-# Weighted Shuffle for cmus
+# Weighted Shuffle Web Music Player
 
-This script adds weighted shuffle functionality to cmus (C* Music Player). It prioritizes songs based on a score that you assign to them on the fly.
+This web application provides a music player with weighted shuffle functionality. It prioritizes songs based on scores that you assign to them, creating a personalized listening experience.
 
 ## How It Works
 
-The script attaches to cmus via the `status_display_program` option to keep track of the songs played. Each time a track transition occurs, a new song is picked by weighted shuffle (weight is calculated as `2 ** score`) and added to the queue. When shuffling, songs with higher scores have an exponentially higher probability of being played.
-
-The script provides special commands to increase or decrease the score of the current song and to play the previous song:
-
-- `~/.config/cmus/weighted_shuffle.py score 1` to increase current song score
-- `~/.config/cmus/weighted_shuffle.py score -1` to decrease current song score
-- `~/.config/cmus/weighted_shuffle.py previous` to play the previously played song, because cmus built-in way to do it ignores the queue and plays whatever was played before using the queue.
+The application uses a SQLite database (via sql.js) to store song scores. When shuffling, songs with higher scores have an exponentially higher probability of being played (weight is calculated as `2 ** score`).
 
 ## Installation
 
-1. Ensure the script is executable and in your cmus config directory:
+1. Clone this repository or download the source code.
+2. Ensure you have a modern web browser that supports the File System Access API.
+3. Run a web server in the project directory. For example, you can use the following command to serve the files in the current directory:
    ```
-   chmod +x ~/.config/cmus/weighted_shuffle.py
+   python3 -m http.server
    ```
-
-2. Add these lines to your cmus config file (`~/.config/cmus/rc`), or run them in cmus by typing them in the cmus shell (type `:` to open it):
+   or
    ```
-   set status_display_program=~/.config/cmus/weighted_shuffle.py
-   bind -f common ] shell ~/.config/cmus/weighted_shuffle.py score 1
-   bind -f common [ shell ~/.config/cmus/weighted_shuffle.py score -1
-   bind -f common p shell ~/.config/cmus/weighted_shuffle.py previous
+   npx http-server
    ```
 
-3. In cmus, use the following commands:
-   - `]`: Increase the score of the current song
-   - `[`: Decrease the score of the current song
-   - `p`: Go to the previous song (using the script's queue history)
+## Usage
+
+1. Click "Select Folder" to choose your music directory.
+2. The application will scan for audio files and add them to the database.
+3. Use the playback controls to play, pause, skip, or go to the previous track.
+4. Use the upvote/downvote buttons to adjust the score of the currently playing song.
+5. The playlist will automatically fill with songs based on their scores.
+6. You can manually edit scores in the Library view.
 
 ## Configuration
 
-You can adjust the following parameters at the top of the `weighted_shuffle.py` file:
+You can adjust the following parameters in the `config.js` file:
 
 - `MIN_SCORE`: Minimum score for a song (default: -1)
 - `DEFAULT_SCORE`: Default score for new songs (default: 2)
 - `MAX_SCORE`: Maximum score for a song (default: 15)
-- `DISABLE_WEIGHTED_SHUFFLE_THRESHOLD`: Probability of picking a random song instead of using weighted shuffle (default: 0.3)
-- `MAX_QUEUE_SIZE`: Maximum number of songs in the queue (default: 20)
+- `MAX_PLAYLIST_SIZE`: Maximum number of songs in the playlist (default: 20)
+
+## Technical Details
+
+- The application uses the File System Access API to read music files from the user's local system.
+- Song scores and metadata are stored in a SQLite database using sql.js.
+- The weighted shuffle algorithm uses exponential weighting to prioritize higher-scored songs.
+- The Media Session API is used to integrate with system-wide media controls.
+
+## Browser Compatibility
+
+This application requires a modern web browser with support for:
+
+- File System Access API
+- ES6+ JavaScript features
+- Media Session API
+
+It has been tested on Chromium-based browsers.
 
 ## Note
 
-This script adds functionality to cmus without changing its default behavior. It provides an alternative `previous` command (`p`) that takes into account the history of songs played in the queue, which the default cmus behavior doesn't track.
-
-The script now prevents duplicate songs in the queue and occasionally selects random songs to maintain variety in your listening experience.
+This is a client-side only application. All data is stored locally in your browser and on your file system. No data is sent to any server.

@@ -29,3 +29,6 @@ thead { position: sticky; top: 0; }
 th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
 th { background-color: #f2f2f2; }
 .edit-score { width: 50px; }
+.song-path { cursor: pointer; }
+.song-path:hover { background-color: #ddd; }
+.playing { background-color: #f2f2f2; }

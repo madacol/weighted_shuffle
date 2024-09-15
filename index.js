@@ -160,11 +160,13 @@ import { MIN_SCORE, MAX_SCORE, DEFAULT_SCORE, MAX_PLAYLIST_SIZE } from './config
         playlist.forEach((song, index) => {
             const row = document.createElement('tr');
             row.innerHTML = /*html*/`
-                <td>${song}</td>
+                <td class="song-path">${song}</td>
                 <td><input type="number" class="edit-score" value="${getSongScore(song)}" min="${MIN_SCORE}" max="${MAX_SCORE}"></td>
                 <td><button class="delete-from-playlist">Delete</button></td>
             `;
-            if (index === currentIndex) row.style.fontWeight = 'bold';
+            const path = row.querySelector('.song-path');
+            path.addEventListener('click', () => { currentIndex = index; playSong(song) });
+            if (index === currentIndex) path.classList.add('playing');
             fragment.appendChild(row);
         });
 
@@ -177,7 +179,7 @@ import { MIN_SCORE, MAX_SCORE, DEFAULT_SCORE, MAX_PLAYLIST_SIZE } from './config
                 const row = button.closest('tr');
                 const path = row.cells[0].textContent;
                 playlist.splice(playlist.indexOf(path), 1);
-                updatePlaylistUI();
+                row.remove();
                 fillPlaylist();
             });
         });

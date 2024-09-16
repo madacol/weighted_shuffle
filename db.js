@@ -1,19 +1,21 @@
 import { MIN_SCORE, MAX_SCORE, DEFAULT_SCORE } from './config.js';
 
 let db = null;
+/** @type {FileSystemFileHandle} */
+let dbFileHandle = null;
 
 /**
  * Initializes the database with the given music folder handle.
- * @param {FileSystemDirectoryHandle} musicFolderHandle - The handle to the music folder.
+ * @param {FileSystemDirectoryHandle} folderHandle - The handle to the music folder.
  * @returns {Promise<void>}
  */
-export async function initDatabase(musicFolderHandle) {
+export async function initDatabase(folderHandle) {
     const SQL = await initSqlJs({
         locateFile: filename => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.11.0/${filename}`
     });
 
     try {
-        const dbFileHandle = await musicFolderHandle.getFileHandle('music_db.sqlite', { create: false });
+        dbFileHandle = await folderHandle.getFileHandle('music_db.sqlite', { create: false });
         const dbFile = await dbFileHandle.getFile();
         const arrayBuffer = await dbFile.arrayBuffer();
         db = new SQL.Database(new Uint8Array(arrayBuffer));
@@ -32,6 +34,17 @@ export async function initDatabase(musicFolderHandle) {
         score INTEGER,
         last_played TIMESTAMP
     )`);
+}
+
+/**
+ * Saves the current state of the database to a file.
+ * @returns {Promise<void>}
+ */
+async function saveDatabase() {
+    const data = db.export();
+    const writable = await dbFileHandle.createWritable();
+    await writable.write(data);
+    await writable.close();
 }
 
 /**
@@ -56,6 +69,7 @@ export async function addNewSongsToDatabase(musicFiles) {
         sql(/*sql*/`INSERT OR IGNORE INTO song_scores (path, score, last_played) VALUES (?, ?, ?)`,
             [file, DEFAULT_SCORE, Date.now()]);
     }
+    await saveDatabase();
 }
 
 /**
@@ -72,13 +86,14 @@ export function getSongScore(path) {
  * Updates the score for a given song path.
  * @param {string} path - The path of the song.
  * @param {number} increment - The amount to increment the score by.
- * @returns {number} The new score after updating.
+ * @returns {Promise<number>} The new score after updating.
  */
-export function updateScore(path, increment) {
+export async function updateScore(path, increment) {
     const result = sql(/*sql*/`SELECT score FROM song_scores WHERE path = ?`, [path]);
     let score = result.length > 0 && result[0].values.length > 0 ? result[0].values[0][0] : DEFAULT_SCORE;
     let newScore = Math.max(MIN_SCORE, Math.min(MAX_SCORE, score + increment));
     sql(/*sql*/`INSERT OR REPLACE INTO song_scores (path, score, last_played) VALUES (?, ?, ?)`,
         [path, newScore, Date.now()]);
+    await saveDatabase();
     return newScore;
 }

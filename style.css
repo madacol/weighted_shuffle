@@ -32,3 +32,9 @@ th { background-color: #f2f2f2; }
 .song-path { cursor: pointer; }
 .song-path:hover { background-color: #ddd; }
 .playing { background-color: #f2f2f2; }
+#nowPlaying {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

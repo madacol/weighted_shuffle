@@ -105,6 +105,9 @@ import { MIN_SCORE, MAX_SCORE, DEFAULT_SCORE, MAX_PLAYLIST_SIZE } from './config
                 const row = tableBody.insertRow();
                 row.insertCell(0).textContent = path;
                 row.insertCell(1).innerHTML = /*html*/`<input type="number" class="edit-score" value="${score}" min="${MIN_SCORE}" max="${MAX_SCORE}">`;
+                const pathCell = row.firstElementChild;
+                pathCell.addEventListener('click', () => addToQueue(path));
+                pathCell.classList.add('song-path');
             });
         }
 
@@ -118,6 +121,11 @@ import { MIN_SCORE, MAX_SCORE, DEFAULT_SCORE, MAX_PLAYLIST_SIZE } from './config
                 await updateLibrary();
             });
         });
+    }
+
+    function addToQueue(path) {
+        playlist.push(path);
+        updatePlaylistUI();
     }
 
     /**
@@ -180,7 +188,6 @@ import { MIN_SCORE, MAX_SCORE, DEFAULT_SCORE, MAX_PLAYLIST_SIZE } from './config
                 const path = row.cells[0].textContent;
                 playlist.splice(playlist.indexOf(path), 1);
                 row.remove();
-                fillPlaylist();
             });
         });
         document.querySelectorAll('.edit-score').forEach(/** @param {HTMLInputElement} input */ input => {
@@ -216,14 +223,13 @@ import { MIN_SCORE, MAX_SCORE, DEFAULT_SCORE, MAX_PLAYLIST_SIZE } from './config
         audioPlayer.src = URL.createObjectURL(file);
         audioPlayer.play();
         document.getElementById('nowPlaying').textContent = path;
-        updatePlaylistUI();
+        fillPlaylist();
         updateMediaSessionMetadata(path);
     }
 
     function playNext() {
         currentIndex = (currentIndex + 1) % playlist.length;
         playSong(playlist[currentIndex]);
-        fillPlaylist();
     }
 
     function playPrevious() {

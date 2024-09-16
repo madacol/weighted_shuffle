@@ -163,7 +163,7 @@ import { MIN_SCORE, MAX_SCORE, DEFAULT_SCORE, MAX_PLAYLIST_SIZE } from './config
 
     function updatePlaylistUI() {
         const playlistTableBody = document.querySelector('#playlistTable tbody');
-        const fragment = document.createDocumentFragment();
+        playlistTableBody.innerHTML = '';
 
         playlist.forEach((song, index) => {
             const row = document.createElement('tr');
@@ -172,14 +172,14 @@ import { MIN_SCORE, MAX_SCORE, DEFAULT_SCORE, MAX_PLAYLIST_SIZE } from './config
                 <td><input type="number" class="edit-score" value="${getSongScore(song)}" min="${MIN_SCORE}" max="${MAX_SCORE}"></td>
                 <td><button class="delete-from-playlist">Delete</button></td>
             `;
-            const path = row.querySelector('.song-path');
-            path.addEventListener('click', () => { currentIndex = index; playSong(song) });
-            if (index === currentIndex) path.classList.add('playing');
-            fragment.appendChild(row);
+            const song_path = row.querySelector('.song-path');
+            song_path.addEventListener('click', () => { currentIndex = index; playSong(song) });
+            playlistTableBody.appendChild(row);
+            if (index === currentIndex) {
+                song_path.classList.add('playing');
+                song_path.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
         });
-
-        playlistTableBody.innerHTML = '';
-        playlistTableBody.appendChild(fragment);
 
         // add event listeners
         document.querySelectorAll('.delete-from-playlist').forEach(/** @param {HTMLButtonElement} button */ button => {

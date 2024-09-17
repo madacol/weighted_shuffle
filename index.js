@@ -28,8 +28,8 @@ import { MIN_SCORE, MAX_SCORE, DEFAULT_SCORE, MAX_PLAYLIST_SIZE } from './config
     // Sets up the Media Session API handlers
     navigator.mediaSession.setActionHandler('nexttrack', playNext);
     navigator.mediaSession.setActionHandler('previoustrack', playPrevious);
-    navigator.mediaSession.setActionHandler('seekforward', () => audioPlayer.currentTime += 10);
-    navigator.mediaSession.setActionHandler('seekbackward', () => audioPlayer.currentTime -= 10);
+    navigator.mediaSession.setActionHandler('seekforward', () => audioPlayer.currentTime += 5);
+    navigator.mediaSession.setActionHandler('seekbackward', () => audioPlayer.currentTime -= 5);
 
     // Event Listeners
     document.getElementById('selectFolder').addEventListener('click', async () => loadMusicFolder(await window.showDirectoryPicker({mode: 'readwrite'})));

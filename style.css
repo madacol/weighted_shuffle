@@ -2,6 +2,7 @@ body {
     font-family: Arial, sans-serif;
     display: flex;
     justify-content: space-around;
+    align-content: flex-start;
     flex-wrap: wrap;
     height: 100vh;
     box-sizing: border-box;
@@ -11,23 +12,24 @@ body {
 #library-container, main {
     display: flex;
     flex-direction: column;
-    height: 100%;
+    max-height: 100%;
     max-width: 800px;
     width: 100%;
 }
-h2 { height: 3em; }
 #controls { display: flex; align-items: center; }
-button { margin: 5px; }
+button { cursor: pointer; }
 audio { width: 100%; flex-shrink: 0; }
 table {
     display: block;
-    border-spacing: 0;
+    border: 1px solid #ddd;
     overflow: auto;
     flex-shrink: 1;
+    box-shadow: 0 0 10px 0 rgba(0, 0, 0, 0.1);
 }
-thead { position: sticky; top: 0; }
-th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-th { background-color: #f2f2f2; }
+td {
+    padding: 8px;
+    text-align: left;
+}
 .edit-score { width: 50px; }
 .song-path { cursor: pointer; }
 .song-path:hover { background-color: #ddd; }
@@ -37,4 +39,5 @@ th { background-color: #f2f2f2; }
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    min-height: 1.5em;
 }

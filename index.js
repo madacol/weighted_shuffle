@@ -222,7 +222,9 @@ import { MIN_SCORE, MAX_SCORE, DEFAULT_SCORE, MAX_PLAYLIST_SIZE } from './config
         const file = await fileHandle.getFile();
         audioPlayer.src = URL.createObjectURL(file);
         audioPlayer.play();
-        document.getElementById('nowPlaying').textContent = path;
+        const nowPlaying = document.getElementById('nowPlaying');
+        nowPlaying.textContent = path;
+        nowPlaying.title = path;
         fillPlaylist();
         updateMediaSessionMetadata(path);
     }

@@ -39,6 +39,18 @@ import { MIN_SCORE, MAX_SCORE, DEFAULT_SCORE, MAX_PLAYLIST_SIZE } from './config
     document.getElementById('upvote').addEventListener('click', () => updateCurrentSongScore(1));
     document.getElementById('downvote').addEventListener('click', () => updateCurrentSongScore(-1));
     audioPlayer.addEventListener('ended', playNext);
+    /** @type {HTMLTableSectionElement} */
+    const playlistTableBody = document.querySelector('#playlistTable tbody');
+    playlistTableBody.addEventListener('dragover', (event) => {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'copy';
+    });
+    playlistTableBody.addEventListener('drop', (event) => {
+        event.preventDefault();
+        const songPath = event.dataTransfer.getData('text/plain');
+        addToQueue(songPath);
+        updatePlaylistUI();
+    });
 
     /**
      * Recursively gets all audio files in a directory
@@ -103,11 +115,14 @@ import { MIN_SCORE, MAX_SCORE, DEFAULT_SCORE, MAX_PLAYLIST_SIZE } from './config
         if (songs.length > 0 && songs[0].values.length > 0) {
             songs[0].values.forEach(([path, score]) => {
                 const row = tableBody.insertRow();
-                row.insertCell(0).textContent = path;
-                row.insertCell(1).innerHTML = /*html*/`<input type="number" class="edit-score" value="${score}" min="${MIN_SCORE}" max="${MAX_SCORE}">`;
-                const pathCell = row.firstElementChild;
-                pathCell.addEventListener('click', () => addToQueue(path));
-                pathCell.classList.add('song-path');
+                row.innerHTML = /*html*/`
+                    <td><input type="number" class="edit-score" value="${score}" min="${MIN_SCORE}" max="${MAX_SCORE}"></td>
+                    <td class="song-path" draggable="true">${path}</td>
+                `;
+                row.querySelector('td.song-path').addEventListener('dragstart', /** @param {DragEvent} event */ (event) => {
+                    event.dataTransfer.setData('text/plain', path);
+                });
+                row.querySelector('.song-path').addEventListener('click', () => playSong(path));
             });
         }
 
@@ -162,19 +177,19 @@ import { MIN_SCORE, MAX_SCORE, DEFAULT_SCORE, MAX_PLAYLIST_SIZE } from './config
     }
 
     function updatePlaylistUI() {
+        /** @type {HTMLTableSectionElement} */
         const playlistTableBody = document.querySelector('#playlistTable tbody');
         playlistTableBody.innerHTML = '';
 
         playlist.forEach((song, index) => {
-            const row = document.createElement('tr');
+            const row = playlistTableBody.insertRow();
             row.innerHTML = /*html*/`
-                <td class="song-path">${song}</td>
                 <td><input type="number" class="edit-score" value="${getSongScore(song)}" min="${MIN_SCORE}" max="${MAX_SCORE}"></td>
+                <td class="song-path">${song}</td>
                 <td><button class="delete-from-playlist">Delete</button></td>
             `;
             const song_path = row.querySelector('.song-path');
             song_path.addEventListener('click', () => { currentIndex = index; playSong(song) });
-            playlistTableBody.appendChild(row);
             if (index === currentIndex) {
                 song_path.classList.add('playing');
                 song_path.scrollIntoView({ behavior: 'smooth', block: 'nearest' });

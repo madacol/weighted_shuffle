@@ -192,7 +192,6 @@ import { MIN_SCORE, MAX_SCORE, DEFAULT_SCORE, MAX_PLAYLIST_SIZE } from './config
             song_path.addEventListener('click', () => { currentIndex = index; playSong(song) });
             if (index === currentIndex) {
                 song_path.classList.add('playing');
-                song_path.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             }
         });
 
@@ -247,11 +246,15 @@ import { MIN_SCORE, MAX_SCORE, DEFAULT_SCORE, MAX_PLAYLIST_SIZE } from './config
     function playNext() {
         currentIndex = (currentIndex + 1) % playlist.length;
         playSong(playlist[currentIndex]);
+        const song_path = document.querySelector(`#playlistTable tbody tr:nth-child(${currentIndex + 1}) .song-path`);
+        song_path.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
     function playPrevious() {
         currentIndex = (currentIndex - 1 + playlist.length) % playlist.length;
         playSong(playlist[currentIndex]);
+        const song_path = document.querySelector(`#playlistTable tbody tr:nth-child(${currentIndex + 1}) .song-path`);
+        song_path.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
     /**

@@ -41,3 +41,7 @@ td {
     white-space: nowrap;
     min-height: 1.5em;
 }
+#folder-select-popover {
+    text-align: center;
+    padding: 2em;
+}

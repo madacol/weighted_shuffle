@@ -19,8 +19,34 @@ import { MIN_SCORE, MAX_SCORE, DEFAULT_SCORE, MAX_PLAYLIST_SIZE } from './config
         const lastFolderHandle = await getLastFolderHandle();
         if (lastFolderHandle) {
             await loadMusicFolder(lastFolderHandle);
+            updateLibrary();
+        } else {
+            // show popover to select a folder
+            console.log('No previous folder selected. Showing popover to select a folder.');
+            const popover = document.createElement('div');
+            popover.setAttribute('popover', '');
+            popover.id = 'folder-select-popover';
+            popover.innerHTML = /*html*/`
+                <p>Please select a music folder</p>
+                <button id="select-folder-btn">Select Folder</button>
+            `;
+            document.body.appendChild(popover);
+
+            const selectButton = document.getElementById('select-folder-btn');
+            selectButton.addEventListener('click', async () => {
+                try {
+                    const folderHandle = await showDirectoryPicker({mode: 'readwrite'});
+                    await loadMusicFolder(folderHandle);
+                    updateLibrary();
+                    popover.hidePopover();
+                } catch (error) {
+                    console.error('Error selecting folder:', error);
+                    popover.querySelector('p').textContent = 'Failed to select folder. Please try again.';
+                }
+            });
+
+            popover.showPopover();
         }
-        updateLibrary();
     } catch (err) {
         console.error("Error initializing app:", err);
     }

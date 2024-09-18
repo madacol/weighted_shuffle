@@ -142,8 +142,8 @@ import { MIN_SCORE, MAX_SCORE, DEFAULT_SCORE, MAX_PLAYLIST_SIZE } from './config
             songs[0].values.forEach(([path, score]) => {
                 const row = tableBody.insertRow();
                 row.innerHTML = /*html*/`
-                    <td><input type="number" class="edit-score" value="${score}" min="${MIN_SCORE}" max="${MAX_SCORE}"></td>
                     <td class="song-path" draggable="true">${path}</td>
+                    <td><input type="number" class="edit-score" value="${score}" min="${MIN_SCORE}" max="${MAX_SCORE}"></td>
                 `;
                 row.querySelector('td.song-path').addEventListener('dragstart', /** @param {DragEvent} event */ (event) => {
                     event.dataTransfer.setData('text/plain', path);
@@ -210,9 +210,9 @@ import { MIN_SCORE, MAX_SCORE, DEFAULT_SCORE, MAX_PLAYLIST_SIZE } from './config
         playlist.forEach((song, index) => {
             const row = playlistTableBody.insertRow();
             row.innerHTML = /*html*/`
-                <td><input type="number" class="edit-score" value="${getSongScore(song)}" min="${MIN_SCORE}" max="${MAX_SCORE}"></td>
-                <td class="song-path">${song}</td>
                 <td><button class="delete-from-playlist">Delete</button></td>
+                <td class="song-path">${song}</td>
+                <td><input type="number" class="edit-score" value="${getSongScore(song)}" min="${MIN_SCORE}" max="${MAX_SCORE}"></td>
             `;
             const song_path = row.querySelector('.song-path');
             song_path.addEventListener('click', () => { currentIndex = index; playSong(song) });

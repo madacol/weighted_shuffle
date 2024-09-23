@@ -4,16 +4,15 @@ body {
     justify-content: space-around;
     align-content: flex-start;
     flex-wrap: wrap;
-    height: 100vh;
-    box-sizing: border-box;
-    padding: 2em;
     margin: 0;
 }
 #library-container, main {
     display: flex;
     flex-direction: column;
-    max-height: 100%;
-    max-width: 800px;
+    max-height: 100vh;
+    max-width: 900px;
+    padding: 2em;
+    box-sizing: border-box;
     width: 100%;
 }
 #controls { display: flex; align-items: center; }

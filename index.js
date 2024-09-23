@@ -1,6 +1,7 @@
 import { initDatabase, sql, addNewSongsToDatabase, getSongScore, updateScore } from './db.js';
 import { saveDirHandle, getLastFolderHandle } from './file_handle_store.js';
-import { MIN_SCORE, MAX_SCORE, DEFAULT_SCORE, MAX_PLAYLIST_SIZE } from './config.js';
+import { MIN_SCORE, MAX_SCORE, MAX_PLAYLIST_SIZE } from './config.js';
+
 (async () => {
     /** @type {HTMLAudioElement} The audio player element */
     const audioPlayer = document.getElementsByTagName('audio')[0];
@@ -41,7 +42,7 @@ import { MIN_SCORE, MAX_SCORE, DEFAULT_SCORE, MAX_PLAYLIST_SIZE } from './config
                     popover.hidePopover();
                 } catch (error) {
                     console.error('Error selecting folder:', error);
-                    popover.querySelector('p').textContent = 'Failed to select folder. Please try again.';
+                    popover.querySelector('p').textContent = 'Failed to select folder.';
                 }
             });
 

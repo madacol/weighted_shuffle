@@ -74,8 +74,14 @@ import { MIN_SCORE, MAX_SCORE, DEFAULT_SCORE, MAX_PLAYLIST_SIZE } from './config
     playlistTableBody.addEventListener('drop', (event) => {
         event.preventDefault();
         const songPath = event.dataTransfer.getData('text/plain');
-        addToQueue(songPath);
-        updatePlaylistUI();
+        const targetRow = event.target.closest('tr');
+        if (targetRow) {
+            const rowIndex = targetRow.rowIndex;
+            playlist.splice(rowIndex+1, 0, songPath);
+            updatePlaylistUI();
+        } else {
+            addToQueue(songPath);
+        }
     });
 
     /**

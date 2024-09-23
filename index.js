@@ -159,7 +159,7 @@ import { MIN_SCORE, MAX_SCORE, MAX_PLAYLIST_SIZE } from './config.js';
                 row.querySelector('input').addEventListener('change', async (event) => {
                     const newScore = parseInt(event.target.value);
                     await updateScore(path, newScore - getSongScore(path));
-                    await updateLibrary();
+                    event.target.value = getSongScore(path);
                 });
             });
         }
@@ -233,7 +233,7 @@ import { MIN_SCORE, MAX_SCORE, MAX_PLAYLIST_SIZE } from './config.js';
             row.querySelector('.edit-score').addEventListener('change', async (event) => {
                 const newScore = parseInt(event.target.value);
                 await updateScore(song, newScore - getSongScore(song));
-                await updateLibrary();
+                event.target.value = getSongScore(song);
             });
         });
     }
@@ -304,7 +304,11 @@ import { MIN_SCORE, MAX_SCORE, MAX_PLAYLIST_SIZE } from './config.js';
             const path = playlist[currentIndex];
             const newScore = await updateScore(path, increment);
             console.log(`Score updated. New score: ${newScore}`);
-            await updateLibrary();
+            document.querySelectorAll('.song-path').forEach(song_path => {
+                if (song_path.textContent === playlist[currentIndex]) {
+                    song_path.closest('tr').querySelector('.edit-score').value = newScore;
+                }
+            });
         }
     }
 })();

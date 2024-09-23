@@ -222,7 +222,11 @@ import { MIN_SCORE, MAX_SCORE, MAX_PLAYLIST_SIZE } from './config.js';
                 <td><input type="number" class="edit-score" value="${getSongScore(song)}" min="${MIN_SCORE}" max="${MAX_SCORE}"></td>
             `;
             const song_path = row.querySelector('.song-path');
-            song_path.addEventListener('click', () => { currentIndex = index; playSong(song) });
+            song_path.addEventListener('click', () => {
+                currentIndex = index;
+                playSong(song);
+                song_path.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            });
             if (index === currentIndex) {
                 song_path.classList.add('playing');
             }
@@ -282,18 +286,18 @@ import { MIN_SCORE, MAX_SCORE, MAX_PLAYLIST_SIZE } from './config.js';
         updateMediaSessionMetadata(path);
     }
 
-    function playNext() {
+    async function playNext() {
         currentIndex = (currentIndex + 1) % playlist.length;
-        playSong(playlist[currentIndex]);
+        await playSong(playlist[currentIndex]);
         const song_path = document.querySelector(`#playlistTable tbody tr:nth-child(${currentIndex + 1}) .song-path`);
-        song_path.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        song_path.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
-    function playPrevious() {
+    async function playPrevious() {
         currentIndex = (currentIndex - 1 + playlist.length) % playlist.length;
-        playSong(playlist[currentIndex]);
+        await playSong(playlist[currentIndex]);
         const song_path = document.querySelector(`#playlistTable tbody tr:nth-child(${currentIndex + 1}) .song-path`);
-        song_path.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        song_path.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
     /**

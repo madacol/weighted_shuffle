@@ -268,7 +268,13 @@ import { MIN_SCORE, MAX_SCORE, MAX_PLAYLIST_SIZE } from './config.js';
         }
         const file = await fileHandle.getFile();
         audioPlayer.src = URL.createObjectURL(file);
-        audioPlayer.play();
+        try {
+            await audioPlayer.play();
+        } catch (error) {
+            console.error(`Failed to play: "${path}"`, error);
+            if (error.name !== 'NotAllowedError')
+                return playNext();
+        }
         const nowPlaying = document.getElementById('nowPlaying');
         nowPlaying.textContent = path;
         nowPlaying.title = path;

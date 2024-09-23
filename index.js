@@ -156,19 +156,13 @@ import { MIN_SCORE, MAX_SCORE, MAX_PLAYLIST_SIZE } from './config.js';
                     event.dataTransfer.setData('text/plain', path);
                 });
                 row.querySelector('.song-path').addEventListener('click', () => playSong(path));
+                row.querySelector('input').addEventListener('change', async (event) => {
+                    const newScore = parseInt(event.target.value);
+                    await updateScore(path, newScore - getSongScore(path));
+                    await updateLibrary();
+                });
             });
         }
-
-        // add event listeners
-        document.querySelectorAll('.edit-score').forEach(/** @param {HTMLInputElement} input */ input => {
-            input.addEventListener('change', async () => {
-                const row = input.closest('tr');
-                const path = row.cells[0].textContent;
-                const newScore = parseInt(input.value);
-                await updateScore(path, newScore - getSongScore(path));
-                await updateLibrary();
-            });
-        });
     }
 
     function addToQueue(path) {
@@ -230,23 +224,15 @@ import { MIN_SCORE, MAX_SCORE, MAX_PLAYLIST_SIZE } from './config.js';
             if (index === currentIndex) {
                 song_path.classList.add('playing');
             }
-        });
 
-        // add event listeners
-        document.querySelectorAll('.delete-from-playlist').forEach(/** @param {HTMLButtonElement} button */ button => {
-            button.addEventListener('click', async () => {
-                const row = button.closest('tr');
-                const path = row.cells[0].textContent;
-                playlist.splice(playlist.indexOf(path), 1);
+            // add event listeners
+            row.querySelector('button').addEventListener('click', async (event) => {
+                playlist.splice(playlist.indexOf(song), 1);
                 row.remove();
             });
-        });
-        document.querySelectorAll('.edit-score').forEach(/** @param {HTMLInputElement} input */ input => {
-            input.addEventListener('change', async () => {
-                const row = input.closest('tr');
-                const path = row.cells[0].textContent;
-                const newScore = parseInt(input.value);
-                await updateScore(path, newScore - getSongScore(path));
+            row.querySelector('.edit-score').addEventListener('change', async (event) => {
+                const newScore = parseInt(event.target.value);
+                await updateScore(song, newScore - getSongScore(song));
                 await updateLibrary();
             });
         });

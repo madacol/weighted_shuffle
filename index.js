@@ -20,7 +20,6 @@ import { MIN_SCORE, MAX_SCORE, MAX_PLAYLIST_SIZE } from './config.js';
         const lastFolderHandle = await getLastFolderHandle();
         if (lastFolderHandle) {
             await loadMusicFolder(lastFolderHandle);
-            updateLibrary();
         } else {
             // show popover to select a folder
             console.log('No previous folder selected. Showing popover to select a folder.');
@@ -38,7 +37,6 @@ import { MIN_SCORE, MAX_SCORE, MAX_PLAYLIST_SIZE } from './config.js';
                 try {
                     const folderHandle = await showDirectoryPicker({mode: 'readwrite'});
                     await loadMusicFolder(folderHandle);
-                    updateLibrary();
                     popover.hidePopover();
                 } catch (error) {
                     console.error('Error selecting folder:', error);
@@ -132,11 +130,12 @@ import { MIN_SCORE, MAX_SCORE, MAX_PLAYLIST_SIZE } from './config.js';
             const musicFiles = await getFiles(folderHandle);
             await addNewSongsToDatabase(musicFiles);
             await saveDirHandle(folderHandle);
-            fillPlaylist();
             if (!audioPlayer.src && playlist.length > 0) playSong(playlist[0]);
         } catch (err) {
             console.error("Error loading music folder:", err);
         }
+        fillPlaylist();
+        updateLibrary();
     }
 
     async function updateLibrary() {

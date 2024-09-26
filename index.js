@@ -1,19 +1,19 @@
-import { initDatabase, sql, addNewSongsToDatabase, getSongScore, updateScore } from './db.js';
+import { initDatabase, sql, addNewSongsToDatabase } from './db.js';
 import { saveDirHandle, getLastFolderHandle } from './file_handle_store.js';
-import { MIN_SCORE, MAX_SCORE, MAX_PLAYLIST_SIZE } from './config.js';
+import './components/Library.js';
+import './components/Playlist.js';
 
 (async () => {
     /** @type {HTMLAudioElement} The audio player element */
     const audioPlayer = document.getElementsByTagName('audio')[0];
 
-    /** @type {string[]} The playlist array containing file paths */
-    const playlist = [];
-
-    /** @type {number} The index of the currently playing song in the playlist */
-    let currentIndex = 0;
-
     /** @type {FileSystemDirectoryHandle|null} The handle for the selected music folder */
     let musicFolderHandle = null;
+
+    /** @type {Library} */
+    const libraryComponent = document.querySelector('music-library');
+    /** @type {Playlist} */
+    const playlistComponent = document.querySelector('music-playlist');
 
     // Initializes the application
     try {
@@ -51,38 +51,22 @@ import { MIN_SCORE, MAX_SCORE, MAX_PLAYLIST_SIZE } from './config.js';
     }
 
     // Sets up the Media Session API handlers
-    navigator.mediaSession.setActionHandler('nexttrack', playNext);
-    navigator.mediaSession.setActionHandler('previoustrack', playPrevious);
+    navigator.mediaSession.setActionHandler('nexttrack', () => playlistComponent.playNext());
+    navigator.mediaSession.setActionHandler('previoustrack', () => playlistComponent.playPrevious());
     navigator.mediaSession.setActionHandler('seekforward', () => audioPlayer.currentTime += 5);
     navigator.mediaSession.setActionHandler('seekbackward', () => audioPlayer.currentTime -= 5);
 
     // Event Listeners
     document.getElementById('selectFolder').addEventListener('click', async () => loadMusicFolder(await window.showDirectoryPicker({mode: 'readwrite'})));
     document.getElementById('playPause').addEventListener('click', () => audioPlayer.paused ? audioPlayer.play() : audioPlayer.pause());
-    document.getElementById('next').addEventListener('click', playNext);
-    document.getElementById('previous').addEventListener('click', playPrevious);
-    document.getElementById('upvote').addEventListener('click', () => updateCurrentSongScore(1));
-    document.getElementById('downvote').addEventListener('click', () => updateCurrentSongScore(-1));
-    audioPlayer.addEventListener('ended', playNext);
-    /** @type {HTMLTableSectionElement} */
-    const playlistTableBody = document.querySelector('#playlistTable tbody');
-    playlistTableBody.addEventListener('dragover', (event) => {
-        event.preventDefault();
-        event.dataTransfer.dropEffect = 'copy';
-    });
-    playlistTableBody.addEventListener('drop', (event) => {
-        event.preventDefault();
-        const songPath = event.dataTransfer.getData('text/plain');
-        const targetRow = event.target.closest('tr');
-        if (targetRow) {
-            const rowIndex = targetRow.rowIndex;
-            playlist.splice(rowIndex+1, 0, songPath);
-            updatePlaylistUI();
-        } else {
-            addToQueue(songPath);
-        }
-    });
+    document.getElementById('next').addEventListener('click', () => playlistComponent.playNext());
+    document.getElementById('previous').addEventListener('click', () => playlistComponent.playPrevious());
+    document.getElementById('upvote').addEventListener('click', () => playlistComponent.updateCurrentSongScore(1));
+    document.getElementById('downvote').addEventListener('click', () => playlistComponent.updateCurrentSongScore(-1));
+    audioPlayer.addEventListener('ended', () => playlistComponent.playNext());
 
+    libraryComponent.addEventListener('play-song', (event) => playSong(event.detail.song));
+    playlistComponent.addEventListener('play-song', (event) => playSong(event.detail.song));
     /**
      * Recursively gets all audio files in a directory
      * @param {FileSystemDirectoryHandle} dirHandle - The directory handle to search
@@ -130,111 +114,19 @@ import { MIN_SCORE, MAX_SCORE, MAX_PLAYLIST_SIZE } from './config.js';
             const musicFiles = await getFiles(folderHandle);
             await addNewSongsToDatabase(musicFiles);
             await saveDirHandle(folderHandle);
-            if (!audioPlayer.src && playlist.length > 0) playSong(playlist[0]);
+            playlistComponent.fillPlaylist();
+            if (!audioPlayer.src && playlistComponent.playlist.length > 0) {
+                playSong(playlistComponent.playlist[0]);
+            }
         } catch (err) {
             console.error("Error loading music folder:", err);
         }
-        fillPlaylist();
         updateLibrary();
     }
 
     async function updateLibrary() {
         const songs = sql(/*sql*/`SELECT path, score FROM song_scores ORDER BY score DESC`);
-        /** @type {HTMLTableSectionElement} */
-        const tableBody = document.querySelector('#library tbody');
-        tableBody.innerHTML = '';
-
-        if (songs.length > 0 && songs[0].values.length > 0) {
-            songs[0].values.forEach(([path, score]) => {
-                const row = tableBody.insertRow();
-                row.innerHTML = /*html*/`
-                    <td class="song-path" draggable="true">${path}</td>
-                    <td><input type="number" class="edit-score" value="${score}" min="${MIN_SCORE}" max="${MAX_SCORE}"></td>
-                `;
-                row.querySelector('td.song-path').addEventListener('dragstart', /** @param {DragEvent} event */ (event) => {
-                    event.dataTransfer.setData('text/plain', path);
-                });
-                row.querySelector('.song-path').addEventListener('click', () => playSong(path));
-                row.querySelector('input').addEventListener('change', async (event) => {
-                    const newScore = parseInt(event.target.value);
-                    await updateScore(path, newScore - getSongScore(path));
-                    event.target.value = getSongScore(path);
-                });
-            });
-        }
-    }
-
-    function addToQueue(path) {
-        playlist.push(path);
-        updatePlaylistUI();
-    }
-
-    /**
-     * Gets a weighted shuffled song from the database
-     * @returns {string|null} The path of the selected song, or null if no songs are available
-     */
-    function getWeightedShuffledSong() {
-        const songs = sql(/*sql*/`SELECT path, score FROM song_scores ORDER BY score DESC`);
-        if (songs.length === 0 || songs[0].values.length === 0) return null;
-
-        const totalComputedScore = songs[0].values.reduce((sum, song) => sum + Math.pow(2, song[1]), 0);
-        let r = Math.random() * totalComputedScore;
-        for (let song of songs[0].values) {
-            r -= 2 ** song[1];
-            if (r <= 0) return song[0];
-        }
-        return songs[0].values[Math.floor(Math.random() * songs[0].values.length)][0];
-    }
-
-    /**
-     * Fills the playlist with new songs
-     */
-    function fillPlaylist() {
-        let maxTries = 10;
-        while (playlist.length - currentIndex < MAX_PLAYLIST_SIZE) {
-            let newSong = getWeightedShuffledSong();
-            if (!newSong) return console.log("No songs in library");
-
-            if (!playlist.slice(-MAX_PLAYLIST_SIZE).includes(newSong) || maxTries-- <= 0) {
-                playlist.push(newSong);
-            }
-        }
-        updatePlaylistUI();
-    }
-
-    function updatePlaylistUI() {
-        /** @type {HTMLTableSectionElement} */
-        const playlistTableBody = document.querySelector('#playlistTable tbody');
-        playlistTableBody.innerHTML = '';
-
-        playlist.forEach((song, index) => {
-            const row = playlistTableBody.insertRow();
-            row.innerHTML = /*html*/`
-                <td><button class="delete-from-playlist">Delete</button></td>
-                <td class="song-path">${song}</td>
-                <td><input type="number" class="edit-score" value="${getSongScore(song)}" min="${MIN_SCORE}" max="${MAX_SCORE}"></td>
-            `;
-            const song_path = row.querySelector('.song-path');
-            song_path.addEventListener('click', () => {
-                currentIndex = index;
-                playSong(song);
-                song_path.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            });
-            if (index === currentIndex) {
-                song_path.classList.add('playing');
-            }
-
-            // add event listeners
-            row.querySelector('button').addEventListener('click', async (event) => {
-                playlist.splice(playlist.indexOf(song), 1);
-                row.remove();
-            });
-            row.querySelector('.edit-score').addEventListener('change', async (event) => {
-                const newScore = parseInt(event.target.value);
-                await updateScore(song, newScore - getSongScore(song));
-                event.target.value = getSongScore(song);
-            });
-        });
+        libraryComponent.updateLibrary(songs[0].values);
     }
 
     /**
@@ -262,27 +154,13 @@ import { MIN_SCORE, MAX_SCORE, MAX_PLAYLIST_SIZE } from './config.js';
         } catch (error) {
             console.error(`Failed to play: "${path}"`, error);
             if (error.name !== 'NotAllowedError')
-                return playNext();
+                return playlistComponent.playNext();
         }
         const nowPlaying = document.getElementById('nowPlaying');
         nowPlaying.textContent = path;
         nowPlaying.title = path;
-        fillPlaylist();
+        playlistComponent.fillPlaylist();
         updateMediaSessionMetadata(path);
-    }
-
-    async function playNext() {
-        currentIndex = (currentIndex + 1) % playlist.length;
-        await playSong(playlist[currentIndex]);
-        const song_path = document.querySelector(`#playlistTable tbody tr:nth-child(${currentIndex + 1}) .song-path`);
-        song_path.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-
-    async function playPrevious() {
-        currentIndex = (currentIndex - 1 + playlist.length) % playlist.length;
-        await playSong(playlist[currentIndex]);
-        const song_path = document.querySelector(`#playlistTable tbody tr:nth-child(${currentIndex + 1}) .song-path`);
-        song_path.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
     /**
@@ -291,23 +169,5 @@ import { MIN_SCORE, MAX_SCORE, MAX_PLAYLIST_SIZE } from './config.js';
      */
     function updateMediaSessionMetadata(title) {
         navigator.mediaSession.metadata = new MediaMetadata({ title });
-    }
-
-    /**
-     * Updates the score of the currently playing song
-     * @async
-     * @param {number} increment - The amount to increment the score by
-     */
-    async function updateCurrentSongScore(increment) {
-        if (audioPlayer.src) {
-            const path = playlist[currentIndex];
-            const newScore = await updateScore(path, increment);
-            console.log(`Score updated. New score: ${newScore}`);
-            document.querySelectorAll('.song-path').forEach(song_path => {
-                if (song_path.textContent === playlist[currentIndex]) {
-                    song_path.closest('tr').querySelector('.edit-score').value = newScore;
-                }
-            });
-        }
     }
 })();

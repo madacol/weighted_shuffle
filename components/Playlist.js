@@ -30,6 +30,8 @@ class Playlist extends HTMLElement {
         this.lastPlayedSong = null;
         /** @type {number|null} */
         this.playStartTime = null;
+        /** @type {string|null} */
+        this.lastEndedSong = null;
     }
 
     connectedCallback() {
@@ -203,6 +205,18 @@ class Playlist extends HTMLElement {
             console.log(`Score updated. New score: ${newScore}`);
             this.updatePlaylistUI();
         });
+    }
+
+    handleSongEnd() {
+        const currentSong = this.playlist[this.currentIndex];
+
+        if (currentSong === this.lastEndedSong) {
+            this.updateCurrentSongScore(1); // Upvote for repeat
+            console.log(`Upvoted song "${currentSong}" for repeating`);
+        }
+        this.lastEndedSong = currentSong;
+
+        this.playNext();
     }
 }
 

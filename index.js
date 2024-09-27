@@ -63,7 +63,7 @@ import './components/Playlist.js';
     document.getElementById('previous').addEventListener('click', () => playlistComponent.playPrevious());
     document.getElementById('upvote').addEventListener('click', () => playlistComponent.updateCurrentSongScore(1));
     document.getElementById('downvote').addEventListener('click', () => playlistComponent.updateCurrentSongScore(-1));
-    audioPlayer.addEventListener('ended', () => playlistComponent.playNext());
+    audioPlayer.addEventListener('ended', () => playlistComponent.handleSongEnd());
 
     libraryComponent.addEventListener('play-song', (event) => playSong(event.detail.song));
     playlistComponent.addEventListener('play-song', (event) => playSong(event.detail.song));

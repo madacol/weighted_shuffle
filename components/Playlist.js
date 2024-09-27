@@ -22,8 +22,14 @@ class Playlist extends HTMLElement {
     constructor() {
         super();
         this.attachShadow({ mode: 'open' });
+        /** @type {string[]} */
         this.playlist = [];
+        /** @type {number} */
         this.currentIndex = 0;
+        /** @type {string|null} */
+        this.lastPlayedSong = null;
+        /** @type {number|null} */
+        this.playStartTime = null;
     }
 
     connectedCallback() {
@@ -133,9 +139,8 @@ class Playlist extends HTMLElement {
             `;
             const song_path = row.querySelector('.song-path');
             song_path.addEventListener('click', () => {
-                this.dispatchEvent(new CustomEvent('play-song', { detail: { song } }));
-                song_path.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 this.currentIndex = index;
+                this.playSong(song);
             });
             if (index === this.currentIndex) {
                 song_path.classList.add('playing');
@@ -171,14 +176,25 @@ class Playlist extends HTMLElement {
         this.updatePlaylistUI();
     }
 
+    playSong(song) {
+        this.lastPlayedSong = song;
+        this.playStartTime = Date.now();
+        this.dispatchEvent(new CustomEvent('play-song', { detail: { song, index: this.currentIndex } }));
+        const songElement = this.shadowRoot.querySelectorAll('.song-path')[this.currentIndex];
+        songElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
     playNext() {
+        if (this.playStartTime && Date.now() - this.playStartTime < 5000) {
+            this.updateCurrentSongScore(-1);
+        }
         this.currentIndex = (this.currentIndex + 1) % this.playlist.length;
-        this.dispatchEvent(new CustomEvent('play-song', { detail: { song: this.playlist[this.currentIndex], index: this.currentIndex } }));
+        this.playSong(this.playlist[this.currentIndex]);
     }
 
     playPrevious() {
         this.currentIndex = (this.currentIndex - 1 + this.playlist.length) % this.playlist.length;
-        this.dispatchEvent(new CustomEvent('play-song', { detail: { song: this.playlist[this.currentIndex], index: this.currentIndex } }));
+        this.playSong(this.playlist[this.currentIndex]);
     }
 
     updateCurrentSongScore(increment) {

@@ -10,9 +10,9 @@ import './components/Playlist.js';
     /** @type {FileSystemDirectoryHandle|null} The handle for the selected music folder */
     let musicFolderHandle = null;
 
-    /** @type {Library} */
+    /** @type {import('./components/Library.js').Library} */
     const libraryComponent = document.querySelector('music-library');
-    /** @type {Playlist} */
+    /** @type {import('./components/Playlist.js').Playlist} */
     const playlistComponent = document.querySelector('music-playlist');
 
     // Initializes the application
@@ -35,7 +35,7 @@ import './components/Playlist.js';
             const selectButton = document.getElementById('select-folder-btn');
             selectButton.addEventListener('click', async () => {
                 try {
-                    const folderHandle = await showDirectoryPicker({mode: 'readwrite'});
+                    const folderHandle = await window.showDirectoryPicker({mode: 'readwrite'});
                     await loadMusicFolder(folderHandle);
                     popover.hidePopover();
                 } catch (error) {

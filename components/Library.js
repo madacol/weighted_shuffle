@@ -76,7 +76,6 @@ class Library extends HTMLElement {
                     if (event.target instanceof HTMLInputElement) {
                         const newScore = parseInt(event.target.value);
                         await updateScore(path, newScore - getSongScore(path));
-                        event.target.value = getSongScore(path).toString();
                     }
                 });
             });

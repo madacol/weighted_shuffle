@@ -159,7 +159,6 @@ class Playlist extends HTMLElement {
                 if (event.target instanceof HTMLInputElement) {
                     const newScore = parseInt(event.target.value);
                     await updateScore(song, newScore - getSongScore(song));
-                    event.target.value = getSongScore(song).toString();
                 }
             });
         });

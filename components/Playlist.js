@@ -182,7 +182,7 @@ class Playlist extends HTMLElement {
         this.playStartTime = Date.now();
         this.dispatchEvent(new CustomEvent('play-song', { detail: { song, index: this.currentIndex } }));
         const songElement = this.shadowRoot.querySelectorAll('.song-path')[this.currentIndex];
-        songElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        songElement.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }
 
     playNext() {

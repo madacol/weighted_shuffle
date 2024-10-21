@@ -37,14 +37,20 @@ export async function initDatabase(folderHandle) {
 }
 
 /**
- * Saves the current state of the database to a file.
+ * Saves the current state of the database to a file with a 5-second debounce.
  * @returns {Promise<void>}
  */
+let saveDatabaseTimeout = null;
 async function saveDatabase() {
-    const data = db.export();
-    const writable = await dbFileHandle.createWritable();
-    await writable.write(data);
-    await writable.close();
+    if (!saveDatabaseTimeout) {
+        saveDatabaseTimeout = setTimeout(async () => {
+            const data = db.export();
+            const writable = await dbFileHandle.createWritable();
+            await writable.write(data);
+            await writable.close();
+            saveDatabaseTimeout = null;
+        }, 5000);
+    }
 }
 
 /**

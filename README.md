@@ -1,10 +1,10 @@
 # Weighted Shuffle Web Music Player
 
-This web application provides a music player with weighted shuffle functionality. It prioritizes songs based on scores that you assign to them, creating a personalized listening experience.
+This web application provides a music player with weighted shuffle functionality. It prioritizes songs based on scores that you assign to them.
 
 ## How It Works
 
-The application uses a SQLite database (via sql.js) to store song scores. When shuffling, songs with higher scores have an exponentially higher probability of being played (weight is calculated as `2 ** score`).
+The application uses a SQLite database (via sql.js) to store song scores. When shuffling, songs with higher scores have an exponentially higher probability of being played (weight is calculated as $2^{score}$).
 
 ## Installation
 
@@ -23,10 +23,8 @@ The application uses a SQLite database (via sql.js) to store song scores. When s
 
 1. Click "Select Folder" to choose your music directory.
 2. The application will scan for audio files and add them to the database.
-3. Use the playback controls to play, pause, skip, or go to the previous track.
-4. Use the upvote/downvote buttons to adjust the score of the currently playing song.
-5. The playlist will automatically fill with songs based on their scores.
-6. You can manually edit scores in the Library view.
+3. Use the upvote/downvote buttons to adjust the score of songs.
+4. The playlist will automatically fill with songs based on their scores.
 
 ## Configuration
 
@@ -41,8 +39,8 @@ You can adjust the following parameters in the `config.js` file:
 
 - The application uses the File System Access API to read music files from the user's local system.
 - Song scores and metadata are stored in a SQLite database using sql.js.
-- The weighted shuffle algorithm uses exponential weighting to prioritize higher-scored songs.
-- The Media Session API is used to integrate with system-wide media controls.
+- The weighted shuffle algorithm uses exponential weighting to give even more weight to higher-scored songs.
+- The Media Session API is used to integrate with system-wide media buttons.
 
 ## Browser Compatibility
 
@@ -52,7 +50,7 @@ This application requires a modern web browser with support for:
 - ES6+ JavaScript features
 - Media Session API
 
-It has been tested on Chromium-based browsers.
+It has been tested on Chromium-based browsers and does not work on Firefox
 
 ## Note
 

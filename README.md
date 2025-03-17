@@ -4,7 +4,7 @@ This web application provides a music player with weighted shuffle functionality
 
 ## How It Works
 
-The application uses a SQLite database (via sql.js) to store song scores. When shuffling, songs with higher scores have an exponentially higher probability of being played (weight is calculated as $2^{score}$).
+Songs with higher scores have an exponentially higher probability of being added to the queue (weight is calculated as $2^{score}$).
 
 ## Installation
 
@@ -24,7 +24,7 @@ The application uses a SQLite database (via sql.js) to store song scores. When s
 1. Click "Select Folder" to choose your music directory.
 2. The application will scan for audio files and add them to the database.
 3. Use the upvote/downvote buttons to adjust the score of songs.
-4. The playlist will automatically fill with songs based on their scores.
+4. The queue will automatically fill with songs based on their scores.
 
 ## Configuration
 

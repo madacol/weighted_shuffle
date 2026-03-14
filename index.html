@@ -9,20 +9,28 @@
     <script type="module" src="./index.js" defer></script>
 </head>
 <body>
-    <main>
-        <h1>Weighted Shuffle Music Player</h1>
-        <div id="controls">
-            <button id="selectFolder">Select Folder</button>
-            <button id="playPause">Play/Pause</button>
-            <button id="next">Next</button>
-            <button id="previous">Previous</button>
-            <button id="upvote">Upvote</button>
-            <button id="downvote">Downvote</button>
-        </div>
-        <h2><span id="nowPlaying"></span></h2>
-        <audio id="audioPlayer" controls></audio>
-        <music-playlist></music-playlist>
-    </main>
+    <header>
+        <h1>Weighted Shuffle</h1>
+        <button id="selectFolder">📂 Select Folder</button>
+    </header>
+    <music-playlist></music-playlist>
     <music-library></music-library>
+    <div id="player-bar">
+        <input type="range" id="seekBar" min="0" max="1000" value="0" step="1">
+        <div id="now-playing">
+            <span id="nowPlaying">No song selected</span>
+            <span id="nowPlayingScore"></span>
+        </div>
+        <div id="transport-controls">
+            <button id="previous" class="transport-btn" title="Previous"></button>
+            <button id="playPause" class="transport-btn play-btn" title="Play"></button>
+            <button id="next" class="transport-btn" title="Next"></button>
+        </div>
+        <div id="vote-controls">
+            <button id="downvote" class="vote-btn downvote-btn" title="Downvote">👎</button>
+            <button id="upvote" class="vote-btn upvote-btn" title="Upvote">👍</button>
+        </div>
+        <audio id="audioPlayer"></audio>
+    </div>
 </body>
 </html>

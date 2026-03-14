@@ -1,11 +1,15 @@
-import { initDatabase, sql, addNewSongsToDatabase } from './db.js';
+import { initDatabase, sql, addNewSongsToDatabase, getSongScore } from './db.js';
 import { saveDirHandle, getLastFolderHandle } from './file_handle_store.js';
 import './components/Library.js';
 import './components/Playlist.js';
 
 (async () => {
     /** @type {HTMLAudioElement} The audio player element */
-    const audioPlayer = document.getElementsByTagName('audio')[0];
+    const audioPlayer = document.getElementById('audioPlayer');
+    const seekBar = document.getElementById('seekBar');
+    const playPauseBtn = document.getElementById('playPause');
+    const nowPlayingEl = document.getElementById('nowPlaying');
+    const nowPlayingScoreEl = document.getElementById('nowPlayingScore');
 
     /** @type {FileSystemDirectoryHandle|null} The handle for the selected music folder */
     let musicFolderHandle = null;
@@ -15,20 +19,19 @@ import './components/Playlist.js';
     /** @type {import('./components/Playlist.js').Playlist} */
     const playlistComponent = document.querySelector('music-playlist');
 
-    // Initializes the application
+    // ── Initialize ──
     try {
         const lastFolderHandle = await getLastFolderHandle();
         if (lastFolderHandle) {
             await loadMusicFolder(lastFolderHandle);
         } else {
-            // show popover to select a folder
             console.log('No previous folder selected. Showing popover to select a folder.');
             const popover = document.createElement('div');
             popover.setAttribute('popover', '');
             popover.id = 'folder-select-popover';
             popover.innerHTML = /*html*/`
-                <p>Please select a music folder</p>
-                <button id="select-folder-btn">Select Folder</button>
+                <p>Select your music folder to get started</p>
+                <button id="select-folder-btn">📂 Browse</button>
             `;
             document.body.appendChild(popover);
 
@@ -40,7 +43,7 @@ import './components/Playlist.js';
                     popover.hidePopover();
                 } catch (error) {
                     console.error('Error selecting folder:', error);
-                    popover.querySelector('p').textContent = 'Failed to select folder.';
+                    popover.querySelector('p').textContent = 'Failed to select folder. Try again.';
                 }
             });
 
@@ -50,28 +53,78 @@ import './components/Playlist.js';
         console.error("Error initializing app:", err);
     }
 
-    // Sets up the Media Session API handlers
+    // ── Media Session ──
     navigator.mediaSession.setActionHandler('nexttrack', () => playlistComponent.playNext());
     navigator.mediaSession.setActionHandler('previoustrack', () => playlistComponent.playPrevious());
     navigator.mediaSession.setActionHandler('seekforward', () => audioPlayer.currentTime += 5);
     navigator.mediaSession.setActionHandler('seekbackward', () => audioPlayer.currentTime -= 5);
 
-    // Event Listeners
+    // ── Event Listeners ──
     document.getElementById('selectFolder').addEventListener('click', async () => loadMusicFolder(await window.showDirectoryPicker({mode: 'readwrite'})));
     document.getElementById('playPause').addEventListener('click', () => audioPlayer.paused ? audioPlayer.play() : audioPlayer.pause());
     document.getElementById('next').addEventListener('click', () => playlistComponent.playNext());
     document.getElementById('previous').addEventListener('click', () => playlistComponent.playPrevious());
-    document.getElementById('upvote').addEventListener('click', () => playlistComponent.updateCurrentSongScore(1));
-    document.getElementById('downvote').addEventListener('click', () => playlistComponent.updateCurrentSongScore(-1));
-    audioPlayer.addEventListener('ended', () => playlistComponent.handleSongEnd());
 
+    document.getElementById('upvote').addEventListener('click', () => {
+        playlistComponent.updateCurrentSongScore(1);
+        animateBtn(document.getElementById('upvote'));
+    });
+    document.getElementById('downvote').addEventListener('click', () => {
+        playlistComponent.updateCurrentSongScore(-1);
+        animateBtn(document.getElementById('downvote'));
+    });
+
+    audioPlayer.addEventListener('ended', () => playlistComponent.handleSongEnd());
     libraryComponent.addEventListener('play-song', (event) => playSong(event.detail.song));
     playlistComponent.addEventListener('play-song', (event) => playSong(event.detail.song));
+
+    // ── Play/Pause Icon Toggle ──
+    audioPlayer.addEventListener('play', () => {
+        playPauseBtn.classList.add('is-playing');
+        playPauseBtn.title = 'Pause';
+    });
+    audioPlayer.addEventListener('pause', () => {
+        playPauseBtn.classList.remove('is-playing');
+        playPauseBtn.title = 'Play';
+    });
+
+    // ── Seek Bar Sync ──
+    audioPlayer.addEventListener('timeupdate', () => {
+        if (audioPlayer.duration) {
+            const percent = (audioPlayer.currentTime / audioPlayer.duration) * 1000;
+            seekBar.value = percent;
+            // Color the track to show progress
+            const pct = (percent / 10).toFixed(1);
+            seekBar.style.background = `linear-gradient(to right, var(--accent) ${pct}%, var(--border) ${pct}%)`;
+        }
+    });
+    seekBar.addEventListener('input', () => {
+        if (audioPlayer.duration) {
+            audioPlayer.currentTime = (seekBar.value / 1000) * audioPlayer.duration;
+        }
+    });
+
+    // ── Helpers ──
+
+    /** @param {HTMLElement} btn */
+    function animateBtn(btn) {
+        btn.classList.remove('vote-pulse');
+        // Force reflow to restart animation
+        void btn.offsetWidth;
+        btn.classList.add('vote-pulse');
+        btn.addEventListener('animationend', () => btn.classList.remove('vote-pulse'), { once: true });
+    }
+
+    /** @param {string} path */
+    function getDisplayName(path) {
+        return path.split('/').pop().replace(/\.[^.]+$/, '');
+    }
+
     /**
      * Recursively gets all audio files in a directory
-     * @param {FileSystemDirectoryHandle} dirHandle - The directory handle to search
-     * @param {string} path - The current path
-     * @returns {Promise<string[]>} An array of file paths
+     * @param {FileSystemDirectoryHandle} dirHandle
+     * @param {string} path
+     * @returns {Promise<string[]>}
      */
     async function getFiles(dirHandle, path = "") {
         const files = [];
@@ -86,7 +139,6 @@ import './components/Playlist.js';
                 if (audioExtensions.includes(fileExtension)) {
                     files.push(`${path}${fileHandle.name}`);
                 } else {
-                    // check if it's an audio file using the mime type
                     try {
                         const file = await fileHandle.getFile();
                         if (file.type.startsWith('audio/')) {
@@ -105,7 +157,7 @@ import './components/Playlist.js';
 
     /**
      * Loads the music folder and sets up the database
-     * @param {FileSystemDirectoryHandle} folderHandle - The handle for the music folder
+     * @param {FileSystemDirectoryHandle} folderHandle
      */
     async function loadMusicFolder(folderHandle) {
         musicFolderHandle = folderHandle;
@@ -131,7 +183,7 @@ import './components/Playlist.js';
 
     /**
      * Plays a song
-     * @param {string} path - The file path of the song to play
+     * @param {string} path
      */
     async function playSong(path) {
         const pathParts = path.split('/');
@@ -149,6 +201,11 @@ import './components/Playlist.js';
         }
         const file = await fileHandle.getFile();
         audioPlayer.src = URL.createObjectURL(file);
+
+        // Reset seek bar
+        seekBar.value = 0;
+        seekBar.style.background = `linear-gradient(to right, var(--accent) 0%, var(--border) 0%)`;
+
         try {
             await audioPlayer.play();
         } catch (error) {
@@ -156,16 +213,20 @@ import './components/Playlist.js';
             if (error.name !== 'NotAllowedError')
                 return playlistComponent.playNext();
         }
-        const nowPlaying = document.getElementById('nowPlaying');
-        nowPlaying.textContent = path;
-        nowPlaying.title = path;
+
+        nowPlayingEl.textContent = getDisplayName(path);
+        nowPlayingEl.title = path;
+
+        const score = getSongScore(path);
+        nowPlayingScoreEl.textContent = `Score: ${score}`;
+
         playlistComponent.fillPlaylist();
-        updateMediaSessionMetadata(path);
+        updateMediaSessionMetadata(getDisplayName(path));
     }
 
     /**
      * Updates the media session metadata
-     * @param {string} title - The title of the current song
+     * @param {string} title
      */
     function updateMediaSessionMetadata(title) {
         navigator.mediaSession.metadata = new MediaMetadata({ title });

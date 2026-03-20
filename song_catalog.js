@@ -8,6 +8,15 @@
  * }} songRepository
  */
 export function createSongCatalogServices(songRepository) {
+    const listeners = new Set();
+
+    /**
+     * @param {{ song: string, score: number }} event
+     */
+    function notify(event) {
+        listeners.forEach(listener => listener(event));
+    }
+
     const songCatalog = {
         /**
          * @param {string[]} paths
@@ -40,7 +49,9 @@ export function createSongCatalogServices(songRepository) {
          * @returns {Promise<number>}
          */
         async set(path, score) {
-            return songRepository.setScore(path, score);
+            const nextScore = await songRepository.setScore(path, score);
+            notify({ song: path, score: nextScore });
+            return nextScore;
         },
 
         /**
@@ -49,7 +60,18 @@ export function createSongCatalogServices(songRepository) {
          * @returns {Promise<number>}
          */
         async change(path, delta) {
-            return songRepository.changeScore(path, delta);
+            const nextScore = await songRepository.changeScore(path, delta);
+            notify({ song: path, score: nextScore });
+            return nextScore;
+        },
+
+        /**
+         * @param {(event: { song: string, score: number }) => void} listener
+         * @returns {() => void}
+         */
+        subscribe(listener) {
+            listeners.add(listener);
+            return () => listeners.delete(listener);
         }
     };
 

@@ -241,11 +241,6 @@ class Library extends HTMLElement {
                 e.stopPropagation();
                 this._editScore(newBadge, path, finalScore);
             });
-            this.dispatchEvent(new CustomEvent('song-score-changed', {
-                bubbles: true,
-                composed: true,
-                detail: { song: path, score: finalScore }
-            }));
         };
 
         input.addEventListener('blur', commit);

@@ -23,6 +23,7 @@ import './components/Playlist.js';
     let musicFolderHandle = null;
     let songCatalog = null;
     let songScores = null;
+    let unsubscribeFromScoreChanges = null;
 
     /** @type {import('./components/Library.js').Library} */
     const libraryComponent = document.querySelector('music-library');
@@ -64,31 +65,17 @@ import './components/Playlist.js';
     });
 
     upvoteBtn.addEventListener('click', () => {
-        void playlistComponent.updateCurrentSongScore(1).then(() => {
-            playerController.refreshCurrentScore();
-            return updateLibrary();
-        });
+        void playlistComponent.updateCurrentSongScore(1);
         animateBtn(upvoteBtn);
     });
 
     downvoteBtn.addEventListener('click', () => {
-        void playlistComponent.updateCurrentSongScore(-1).then(() => {
-            playerController.refreshCurrentScore();
-            return updateLibrary();
-        });
+        void playlistComponent.updateCurrentSongScore(-1);
         animateBtn(downvoteBtn);
     });
 
     libraryComponent.addEventListener('play-song', (event) => void playSong(event.detail.song));
     playlistComponent.addEventListener('play-song', (event) => void playSong(event.detail.song));
-    libraryComponent.addEventListener('song-score-changed', () => {
-        playerController.refreshCurrentScore();
-        void updateLibrary();
-    });
-    playlistComponent.addEventListener('song-score-changed', () => {
-        playerController.refreshCurrentScore();
-        void updateLibrary();
-    });
 
     function showFolderSelectionPopover() {
         console.log('No previous folder selected. Showing popover to select a folder.');
@@ -140,6 +127,11 @@ import './components/Playlist.js';
             const services = createSongCatalogServices(songRepository);
             songCatalog = services.songCatalog;
             songScores = services.songScores;
+            unsubscribeFromScoreChanges?.();
+            unsubscribeFromScoreChanges = songScores.subscribe(() => {
+                playerController.refreshCurrentScore();
+                void updateLibrary();
+            });
             libraryComponent.scoreService = songScores;
             playlistComponent.scoreService = songScores;
             playlistComponent.model = createQueueModel({

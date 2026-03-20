@@ -367,14 +367,6 @@ class Playlist extends HTMLElement {
         }));
     }
 
-    _dispatchScoreChanged(song, score) {
-        this.dispatchEvent(new CustomEvent('song-score-changed', {
-            bubbles: true,
-            composed: true,
-            detail: { song, score }
-        }));
-    }
-
     _editScore(badge, path, currentScore) {
         const scoreService = this._getScoreService();
         const input = document.createElement('input');
@@ -401,7 +393,6 @@ class Playlist extends HTMLElement {
                 e.stopPropagation();
                 this._editScore(newBadge, path, finalScore);
             });
-            this._dispatchScoreChanged(path, finalScore);
         };
 
         input.addEventListener('blur', commit);
@@ -433,11 +424,9 @@ class Playlist extends HTMLElement {
     }
 
     async updateCurrentSongScore(increment) {
-        const path = this.playlist[this.currentIndex];
         const newScore = await this._getModel().updateCurrentSongScore(increment);
-        if (path && newScore !== null) {
+        if (newScore !== null) {
             console.log(`Score updated. New score: ${newScore}`);
-            this._dispatchScoreChanged(path, newScore);
         }
         return newScore;
     }

@@ -1,47 +1,59 @@
-import { MIN_SCORE, MAX_SCORE, MAX_PLAYLIST_SIZE } from '../config.js';
-import { getSongScore, sql, updateScore } from '../db.js';
+import { MIN_SCORE, MAX_SCORE } from '../config.js';
+
+/**
+ * @typedef {{
+ *   get(path: string): number,
+ *   set(path: string, score: number): Promise<number>
+ * }} SongScoreService
+ *
+ * @typedef {{
+ *   playlist: string[],
+ *   currentIndex: number
+ * }} QueueState
+ *
+ * @typedef {{
+ *   subscribe(listener: (state: QueueState) => void): () => void,
+ *   getState(): QueueState,
+ *   select(index: number): string|null,
+ *   reorder(sourceIndex: number, targetIndex: number): void,
+ *   add(songPath: string, targetIndex?: number): void,
+ *   remove(index: number): void,
+ *   fill(): void,
+ *   playNext(): string|null,
+ *   playPrevious(): string|null,
+ *   updateCurrentSongScore(increment: number): Promise<number|null>,
+ *   handleSongEnd(): string|null
+ * }} QueueModel
+ */
 
 /** @param {string} path */
 function getDisplayName(path) {
     return path.split('/').pop().replace(/\.[^.]+$/, '');
 }
 
-/**
- * Gets a weighted shuffled song from the database
- * @returns {string|null} The path of the selected song, or null if no songs are available
- */
-function getWeightedShuffledSong() {
-    const songs = sql(/*sql*/`SELECT path, score FROM song_scores ORDER BY score DESC`);
-    if (songs.length === 0 || songs[0].values.length === 0) return null;
-
-    const totalComputedScore = songs[0].values.reduce((sum, song) => sum + Math.pow(2, song[1]), 0);
-    let r = Math.random() * totalComputedScore;
-    for (let song of songs[0].values) {
-        r -= 2 ** song[1];
-        if (r <= 0) return song[0];
-    }
-    return songs[0].values[Math.floor(Math.random() * songs[0].values.length)][0];
-}
-
 class Playlist extends HTMLElement {
     constructor() {
         super();
         this.attachShadow({ mode: 'open' });
-        /** @type {string[]} */
-        this.playlist = [];
-        /** @type {number} */
-        this.currentIndex = 0;
-        /** @type {string|null} */
-        this.lastPlayedSong = null;
-        /** @type {number|null} */
-        this.playStartTime = null;
-        /** @type {string|null} */
-        this.lastEndedSong = null;
+        /** @type {SongScoreService|null} */
+        this._scoreService = null;
+        /** @type {QueueModel|null} */
+        this._model = null;
+        /** @type {(() => void)|null} */
+        this._unsubscribe = null;
+        /** @type {QueueState} */
+        this._state = { playlist: [], currentIndex: 0 };
     }
 
     connectedCallback() {
         this.render();
         this.setupDragAndDrop();
+        this.updatePlaylistUI();
+    }
+
+    disconnectedCallback() {
+        this._unsubscribe?.();
+        this._unsubscribe = null;
     }
 
     render() {
@@ -193,13 +205,50 @@ class Playlist extends HTMLElement {
         `;
     }
 
+    /** @param {SongScoreService} scoreService */
+    set scoreService(scoreService) {
+        this._scoreService = scoreService;
+        this.updatePlaylistUI();
+    }
+
+    /** @param {QueueModel} model */
+    set model(model) {
+        this._unsubscribe?.();
+        this._model = model;
+        this._unsubscribe = model.subscribe((state) => {
+            this._state = state;
+            this.updatePlaylistUI();
+        });
+    }
+
+    /** @returns {QueueModel} */
+    _getModel() {
+        if (!this._model) throw new Error('Playlist model not configured');
+        return this._model;
+    }
+
+    /** @returns {SongScoreService} */
+    _getScoreService() {
+        if (!this._scoreService) throw new Error('Playlist score service not configured');
+        return this._scoreService;
+    }
+
+    /** @returns {string[]} */
+    get playlist() {
+        return this._state.playlist;
+    }
+
+    /** @returns {number} */
+    get currentIndex() {
+        return this._state.currentIndex;
+    }
+
     setupDragAndDrop() {
         const list = this.shadowRoot.querySelector('.song-list');
         list.addEventListener('dragover', (event) => {
             event.preventDefault();
             event.dataTransfer.dropEffect = 'move';
 
-            // Visual drop indicator
             const rows = this.shadowRoot.querySelectorAll('.song-row');
             rows.forEach(r => r.classList.remove('drag-over-top', 'drag-over-bottom'));
             const target = event.target.closest?.('.song-row') || event.composedPath().find(el => el.classList?.contains('song-row'));
@@ -209,9 +258,11 @@ class Playlist extends HTMLElement {
                 target.classList.add(event.clientY < mid ? 'drag-over-top' : 'drag-over-bottom');
             }
         });
+
         list.addEventListener('dragleave', () => {
             this.shadowRoot.querySelectorAll('.song-row').forEach(r => r.classList.remove('drag-over-top', 'drag-over-bottom'));
         });
+
         list.addEventListener('drop', (event) => {
             event.preventDefault();
             this.shadowRoot.querySelectorAll('.song-row').forEach(r => r.classList.remove('drag-over-top', 'drag-over-bottom'));
@@ -239,40 +290,22 @@ class Playlist extends HTMLElement {
     }
 
     reorderSong(sourceIndex, targetIndex) {
-        const [movedSong] = this.playlist.splice(sourceIndex, 1);
-        this.playlist.splice(targetIndex, 0, movedSong);
-        if (this.currentIndex === sourceIndex) {
-            this.currentIndex = targetIndex;
-        } else if (this.currentIndex > sourceIndex && this.currentIndex <= targetIndex) {
-            this.currentIndex--;
-        } else if (this.currentIndex < sourceIndex && this.currentIndex >= targetIndex) {
-            this.currentIndex++;
-        }
-        this.updatePlaylistUI();
+        this._getModel().reorder(sourceIndex, targetIndex);
     }
 
     addSongToPlaylist(songPath, targetIndex) {
-        if (targetIndex !== undefined) {
-            this.playlist.splice(targetIndex, 0, songPath);
-            if (this.currentIndex >= targetIndex) {
-                this.currentIndex++;
-            }
-        } else {
-            this.playlist.push(songPath);
-        }
-        this.updatePlaylistUI();
+        this._getModel().add(songPath, targetIndex);
     }
 
     deleteSong(index) {
-        this.playlist.splice(index, 1);
-        if (this.currentIndex >= index && this.currentIndex > 0) {
-            this.currentIndex--;
-        }
-        this.updatePlaylistUI();
+        this._getModel().remove(index);
     }
 
     updatePlaylistUI() {
-        const list = this.shadowRoot.querySelector('.song-list');
+        const list = this.shadowRoot?.querySelector('.song-list');
+        if (!list || !this._scoreService) return;
+
+        const scoreService = this._getScoreService();
         list.innerHTML = '';
 
         if (this.playlist.length === 0) {
@@ -285,7 +318,7 @@ class Playlist extends HTMLElement {
             row.className = 'song-row';
             if (index === this.currentIndex) row.classList.add('playing');
 
-            const score = getSongScore(song);
+            const score = scoreService.get(song);
             row.innerHTML = /*html*/`
                 ${index === this.currentIndex ? '<div class="eq-bars"><div class="eq-bar"></div><div class="eq-bar"></div><div class="eq-bar"></div></div>' : '<span class="drag-handle">⠿</span>'}
                 <span class="song-name" title="${song}">${getDisplayName(song)}</span>
@@ -293,7 +326,6 @@ class Playlist extends HTMLElement {
                 <button class="delete-btn" title="Remove">✕</button>
             `;
 
-            // Drag
             row.setAttribute('draggable', 'true');
             row.addEventListener('dragstart', (event) => {
                 event.dataTransfer.setData('text/plain', song);
@@ -302,19 +334,18 @@ class Playlist extends HTMLElement {
             });
             row.addEventListener('dragend', () => { row.style.opacity = ''; });
 
-            // Play on click
             row.querySelector('.song-name').addEventListener('click', () => {
-                this.currentIndex = index;
-                this.playSong(song);
+                const songToPlay = this._getModel().select(index);
+                if (songToPlay) {
+                    this._dispatchPlaySong(songToPlay);
+                }
             });
 
-            // Delete
             row.querySelector('.delete-btn').addEventListener('click', (e) => {
                 e.stopPropagation();
                 this.deleteSong(index);
             });
 
-            // Score editing
             const badge = row.querySelector('.score-badge');
             badge.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -324,14 +355,28 @@ class Playlist extends HTMLElement {
             list.appendChild(row);
         });
 
-        // Scroll to current
         const playing = list.querySelector('.song-row.playing');
         if (playing) {
             playing.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
     }
 
+    _dispatchPlaySong(song) {
+        this.dispatchEvent(new CustomEvent('play-song', {
+            detail: { song, index: this.currentIndex }
+        }));
+    }
+
+    _dispatchScoreChanged(song, score) {
+        this.dispatchEvent(new CustomEvent('song-score-changed', {
+            bubbles: true,
+            composed: true,
+            detail: { song, score }
+        }));
+    }
+
     _editScore(badge, path, currentScore) {
+        const scoreService = this._getScoreService();
         const input = document.createElement('input');
         input.type = 'number';
         input.className = 'score-input';
@@ -345,9 +390,9 @@ class Playlist extends HTMLElement {
         const commit = async () => {
             const newScore = parseInt(input.value);
             if (!isNaN(newScore) && newScore !== currentScore) {
-                await updateScore(path, newScore - getSongScore(path));
+                await scoreService.set(path, newScore);
             }
-            const finalScore = getSongScore(path);
+            const finalScore = scoreService.get(path);
             const newBadge = document.createElement('span');
             newBadge.className = 'score-badge';
             newBadge.textContent = finalScore;
@@ -356,6 +401,7 @@ class Playlist extends HTMLElement {
                 e.stopPropagation();
                 this._editScore(newBadge, path, finalScore);
             });
+            this._dispatchScoreChanged(path, finalScore);
         };
 
         input.addEventListener('blur', commit);
@@ -369,56 +415,38 @@ class Playlist extends HTMLElement {
     }
 
     fillPlaylist() {
-        let maxTries = 10;
-        while (this.playlist.length - this.currentIndex < MAX_PLAYLIST_SIZE) {
-            let newSong = getWeightedShuffledSong();
-            if (!newSong) return console.log("No songs in library");
-
-            if (!this.playlist.slice(-MAX_PLAYLIST_SIZE).includes(newSong) || maxTries-- <= 0) {
-                this.playlist.push(newSong);
-            }
-        }
-        this.updatePlaylistUI();
-    }
-
-    playSong(song) {
-        this.lastPlayedSong = song;
-        this.playStartTime = Date.now();
-        this.dispatchEvent(new CustomEvent('play-song', { detail: { song, index: this.currentIndex } }));
-        this.updatePlaylistUI();
+        this._getModel().fill();
     }
 
     playNext() {
-        if (this.playStartTime && Date.now() - this.playStartTime < 5000) {
-            this.updateCurrentSongScore(-1);
+        const song = this._getModel().playNext();
+        if (song) {
+            this._dispatchPlaySong(song);
         }
-        this.currentIndex = (this.currentIndex + 1) % this.playlist.length;
-        this.playSong(this.playlist[this.currentIndex]);
     }
 
     playPrevious() {
-        this.currentIndex = (this.currentIndex - 1 + this.playlist.length) % this.playlist.length;
-        this.playSong(this.playlist[this.currentIndex]);
+        const song = this._getModel().playPrevious();
+        if (song) {
+            this._dispatchPlaySong(song);
+        }
     }
 
-    updateCurrentSongScore(increment) {
+    async updateCurrentSongScore(increment) {
         const path = this.playlist[this.currentIndex];
-        updateScore(path, increment).then(newScore => {
+        const newScore = await this._getModel().updateCurrentSongScore(increment);
+        if (path && newScore !== null) {
             console.log(`Score updated. New score: ${newScore}`);
-            this.updatePlaylistUI();
-        });
+            this._dispatchScoreChanged(path, newScore);
+        }
+        return newScore;
     }
 
     handleSongEnd() {
-        const currentSong = this.playlist[this.currentIndex];
-
-        if (currentSong === this.lastEndedSong) {
-            this.updateCurrentSongScore(1);
-            console.log(`Upvoted song "${currentSong}" for repeating`);
+        const song = this._getModel().handleSongEnd();
+        if (song) {
+            this._dispatchPlaySong(song);
         }
-        this.lastEndedSong = currentSong;
-
-        this.playNext();
     }
 }
 

@@ -1,5 +1,11 @@
 import { MIN_SCORE, MAX_SCORE } from '../config.js';
-import { getSongScore, updateScore } from '../db.js';
+
+/**
+ * @typedef {{
+ *   get(path: string): number,
+ *   set(path: string, score: number): Promise<number>
+ * }} SongScoreService
+ */
 
 /** @param {string} path */
 function getDisplayName(path) {
@@ -20,6 +26,8 @@ class Library extends HTMLElement {
         this.attachShadow({ mode: 'open' });
         /** @type {Array<[string, number]>} */
         this._songs = [];
+        /** @type {SongScoreService|null} */
+        this._scoreService = null;
     }
 
     connectedCallback() {
@@ -139,6 +147,17 @@ class Library extends HTMLElement {
         });
     }
 
+    /** @param {SongScoreService} scoreService */
+    set scoreService(scoreService) {
+        this._scoreService = scoreService;
+    }
+
+    /** @returns {SongScoreService} */
+    _getScoreService() {
+        if (!this._scoreService) throw new Error('Library score service not configured');
+        return this._scoreService;
+    }
+
     _filterSongs(query) {
         const q = query.toLowerCase();
         const rows = this.shadowRoot.querySelectorAll('.song-row');
@@ -196,6 +215,7 @@ class Library extends HTMLElement {
     }
 
     _editScore(badge, path, currentScore) {
+        const scoreService = this._getScoreService();
         const input = document.createElement('input');
         input.type = 'number';
         input.className = 'score-input';
@@ -209,11 +229,11 @@ class Library extends HTMLElement {
         const commit = async () => {
             const newScore = parseInt(input.value);
             if (!isNaN(newScore) && newScore !== currentScore) {
-                await updateScore(path, newScore - getSongScore(path));
+                await scoreService.set(path, newScore);
             }
             const newBadge = document.createElement('span');
             newBadge.className = 'score-badge';
-            const finalScore = getSongScore(path);
+            const finalScore = scoreService.get(path);
             newBadge.style.borderLeft = `3px solid ${getScoreColor(finalScore)}`;
             newBadge.textContent = finalScore;
             input.replaceWith(newBadge);
@@ -221,6 +241,11 @@ class Library extends HTMLElement {
                 e.stopPropagation();
                 this._editScore(newBadge, path, finalScore);
             });
+            this.dispatchEvent(new CustomEvent('song-score-changed', {
+                bubbles: true,
+                composed: true,
+                detail: { song: path, score: finalScore }
+            }));
         };
 
         input.addEventListener('blur', commit);

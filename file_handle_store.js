@@ -15,11 +15,11 @@ const dbPromise = new Promise((resolve, reject) => {
 });
 
 /**
- * Saves a directory handle to the database.
- * @param {FileSystemDirectoryHandle} dirHandle - The directory handle to save.
- * @returns {Promise<void>} A promise that resolves when the handle is saved.
+ * Persists the user's last selected music folder.
+ * @param {FileSystemDirectoryHandle} dirHandle
+ * @returns {Promise<void>}
  */
-export const saveDirHandle = (dirHandle) => {
+export const rememberSelectedFolder = (dirHandle) => {
     return new Promise((resolve, reject) => {
         dbPromise.then((db) => {
             const transaction = db.transaction(['handles'], 'readwrite');
@@ -32,10 +32,10 @@ export const saveDirHandle = (dirHandle) => {
 };
 
 /**
- * Retrieves the last saved folder handle from the database.
- * @returns {Promise<FileSystemDirectoryHandle|undefined>} A promise that resolves with the folder handle or undefined if not found.
+ * Recalls the user's last selected music folder.
+ * @returns {Promise<FileSystemDirectoryHandle|undefined>}
  */
-export const getLastFolderHandle = () => {
+export const recallSelectedFolder = () => {
     return new Promise((resolve, reject) => {
         dbPromise.then((db) => {
             const transaction = db.transaction(['handles'], 'readonly');

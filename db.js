@@ -1,105 +1,156 @@
 import { MIN_SCORE, MAX_SCORE, DEFAULT_SCORE } from './config.js';
 
-let db = null;
-/** @type {FileSystemFileHandle} */
-let dbFileHandle = null;
+const DEFAULT_PERSIST_DELAY_MS = 5000;
 
 /**
- * Initializes the database with the given music folder handle.
- * @param {FileSystemDirectoryHandle} folderHandle - The handle to the music folder.
- * @returns {Promise<void>}
+ * Creates a song repository around a database-like object.
+ * @param {{
+ *   database: { exec(query: string, params?: Array): Array, export(): Uint8Array },
+ *   persist?: (data: Uint8Array) => Promise<void>,
+ *   now?: () => number,
+ *   schedule?: (callback: () => void | Promise<void>, delay: number) => unknown,
+ *   persistDelayMs?: number
+ * }} options
  */
-export async function initDatabase(folderHandle) {
+export function createSongRepositoryFromDatabase({
+    database,
+    persist = async () => {},
+    now = () => Date.now(),
+    schedule = (callback, delay) => setTimeout(callback, delay),
+    persistDelayMs = DEFAULT_PERSIST_DELAY_MS
+}) {
+    let persistHandle = null;
+
+    async function saveDatabase() {
+        if (persistHandle) return;
+
+        persistHandle = schedule(async () => {
+            await persist(database.export());
+            persistHandle = null;
+        }, persistDelayMs);
+    }
+
+    /**
+     * @param {string} query
+     * @param {Array} params
+     * @returns {Array}
+     */
+    function runQuery(query, params = []) {
+        return database.exec(query, params);
+    }
+
+    /**
+     * @param {string} path
+     * @returns {number}
+     */
+    function readScore(path) {
+        const result = runQuery(/*sql*/`SELECT score FROM song_scores WHERE path = ? LIMIT 1`, [path]);
+        return result.length > 0 && result[0].values.length > 0 ? result[0].values[0][0] : DEFAULT_SCORE;
+    }
+
+    /**
+     * @param {number} score
+     * @returns {number}
+     */
+    function clampScore(score) {
+        return Math.max(MIN_SCORE, Math.min(MAX_SCORE, score));
+    }
+
+    /**
+     * @param {string} path
+     * @param {number} score
+     * @returns {Promise<number>}
+     */
+    async function setScore(path, score) {
+        const boundedScore = clampScore(score);
+        runQuery(/*sql*/`INSERT OR REPLACE INTO song_scores (path, score, last_played) VALUES (?, ?, ?)`,
+            [path, boundedScore, now()]);
+        await saveDatabase();
+        return boundedScore;
+    }
+
+    return {
+        /**
+         * @param {string[]} musicFiles
+         * @returns {Promise<void>}
+         */
+        async addMissing(musicFiles) {
+            for (const file of musicFiles) {
+                runQuery(/*sql*/`INSERT OR IGNORE INTO song_scores (path, score, last_played) VALUES (?, ?, ?)`,
+                    [file, DEFAULT_SCORE, now()]);
+            }
+            await saveDatabase();
+        },
+
+        /**
+         * @returns {Array<[string, number]>}
+         */
+        listRanked() {
+            const result = runQuery(/*sql*/`SELECT path, score FROM song_scores ORDER BY score DESC`);
+            return result.length > 0 ? result[0].values : [];
+        },
+
+        /**
+         * @param {string} path
+         * @returns {number}
+         */
+        getScore(path) {
+            return readScore(path);
+        },
+
+        setScore,
+
+        /**
+         * @param {string} path
+         * @param {number} increment
+         * @returns {Promise<number>}
+         */
+        async changeScore(path, increment) {
+            return setScore(path, readScore(path) + increment);
+        }
+    };
+}
+
+/**
+ * Creates a repository backed by sql.js and the selected folder's SQLite file.
+ * @param {FileSystemDirectoryHandle} folderHandle
+ */
+export async function createSongRepository(folderHandle) {
     const SQL = await initSqlJs({
         locateFile: filename => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.11.0/${filename}`
     });
+
+    /** @type {FileSystemFileHandle} */
+    let dbFileHandle;
+    /** @type {InstanceType<typeof SQL.Database>} */
+    let database;
 
     try {
         dbFileHandle = await folderHandle.getFileHandle('music_db.sqlite', { create: false });
         const dbFile = await dbFileHandle.getFile();
         const arrayBuffer = await dbFile.arrayBuffer();
-        db = new SQL.Database(new Uint8Array(arrayBuffer));
+        database = new SQL.Database(new Uint8Array(arrayBuffer));
     } catch (error) {
-        if (error.name === 'NotFoundError') {
-            console.log('Database file not found. Creating a new one.');
-            db = new SQL.Database();
-        } else {
-            throw error;
-        }
+        if (error.name !== 'NotFoundError') throw error;
+
+        console.log('Database file not found. Creating a new one.');
+        database = new SQL.Database();
+        dbFileHandle = await folderHandle.getFileHandle('music_db.sqlite', { create: true });
     }
 
-    db.run(/*sql*/`
+    database.run(/*sql*/`
     CREATE TABLE IF NOT EXISTS song_scores (
         path TEXT PRIMARY KEY,
         score INTEGER,
         last_played TIMESTAMP
     )`);
-}
 
-/**
- * Saves the current state of the database to a file with a 5-second debounce.
- * @returns {Promise<void>}
- */
-let saveDatabaseTimeout = null;
-async function saveDatabase() {
-    if (!saveDatabaseTimeout) {
-        saveDatabaseTimeout = setTimeout(async () => {
-            const data = db.export();
+    return createSongRepositoryFromDatabase({
+        database,
+        persist: async (data) => {
             const writable = await dbFileHandle.createWritable();
             await writable.write(data);
             await writable.close();
-            saveDatabaseTimeout = null;
-        }, 5000);
-    }
-}
-
-/**
- * Executes an SQL query on the database.
- * @param {string} query - The SQL query to execute.
- * @param {Array} [params=[]] - The parameters for the SQL query.
- * @returns {Array} The result of the SQL query.
- * @throws {Error} If the database is not initialized.
- */
-export function sql(query, params = []) {
-    if (!db) throw new Error('Database not initialized');
-    return db.exec(query, params);
-}
-
-/**
- * Adds new songs to the database.
- * @param {Array<string>} musicFiles - An array of file paths to add to the database.
- * @returns {Promise<void>}
- */
-export async function addNewSongsToDatabase(musicFiles) {
-    for (const file of musicFiles) {
-        sql(/*sql*/`INSERT OR IGNORE INTO song_scores (path, score, last_played) VALUES (?, ?, ?)`,
-            [file, DEFAULT_SCORE, Date.now()]);
-    }
-    await saveDatabase();
-}
-
-/**
- * Gets the score for a given song path.
- * @param {string} path - The path of the song.
- * @returns {number} The score of the song, or the default score if not found.
- */
-export function getSongScore(path) {
-    const result = sql(/*sql*/`SELECT score FROM song_scores WHERE path = ? LIMIT 1`, [path]);
-    return result.length > 0 && result[0].values.length > 0 ? result[0].values[0][0] : DEFAULT_SCORE;
-}
-
-/**
- * Updates the score for a given song path.
- * @param {string} path - The path of the song.
- * @param {number} increment - The amount to increment the score by.
- * @returns {Promise<number>} The new score after updating.
- */
-export async function updateScore(path, increment) {
-    const result = sql(/*sql*/`SELECT score FROM song_scores WHERE path = ?`, [path]);
-    let score = result.length > 0 && result[0].values.length > 0 ? result[0].values[0][0] : DEFAULT_SCORE;
-    let newScore = Math.max(MIN_SCORE, Math.min(MAX_SCORE, score + increment));
-    sql(/*sql*/`INSERT OR REPLACE INTO song_scores (path, score, last_played) VALUES (?, ?, ?)`,
-        [path, newScore, Date.now()]);
-    await saveDatabase();
-    return newScore;
+        }
+    });
 }

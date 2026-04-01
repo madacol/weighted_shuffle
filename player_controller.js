@@ -10,6 +10,7 @@
  *   onNext: () => void,
  *   onPrevious: () => void,
  *   onEnded: () => void,
+ *   onPlaybackStateChange?: (isPlaying: boolean) => void,
  *   getDisplayName: (path: string) => string,
  *   getSongScore: (path: string|null) => number|null
  * }} options
@@ -25,6 +26,7 @@ export function createPlayerController({
     onNext,
     onPrevious,
     onEnded,
+    onPlaybackStateChange = () => {},
     getDisplayName,
     getSongScore
 }) {
@@ -34,11 +36,13 @@ export function createPlayerController({
     audioPlayer.addEventListener('play', () => {
         playPauseButton.classList.add('is-playing');
         playPauseButton.title = 'Pause';
+        onPlaybackStateChange(true);
     });
 
     audioPlayer.addEventListener('pause', () => {
         playPauseButton.classList.remove('is-playing');
         playPauseButton.title = 'Play';
+        onPlaybackStateChange(false);
     });
 
     audioPlayer.addEventListener('timeupdate', () => {
@@ -66,7 +70,10 @@ export function createPlayerController({
 
     nextButton.addEventListener('click', onNext);
     previousButton.addEventListener('click', onPrevious);
-    audioPlayer.addEventListener('ended', onEnded);
+    audioPlayer.addEventListener('ended', () => {
+        onPlaybackStateChange(false);
+        onEnded();
+    });
 
     if (navigator.mediaSession) {
         navigator.mediaSession.setActionHandler('nexttrack', onNext);

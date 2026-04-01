@@ -43,6 +43,8 @@ class Playlist extends HTMLElement {
         this._unsubscribe = null;
         /** @type {QueueState} */
         this._state = { playlist: [], currentIndex: 0 };
+        /** @type {boolean} */
+        this._isPlaying = false;
     }
 
     connectedCallback() {
@@ -95,10 +97,14 @@ class Playlist extends HTMLElement {
                 .song-row:hover {
                     background: var(--bg-hover, #2a2a4a);
                 }
-                .song-row.playing {
+                .song-row.current {
                     background: var(--bg-active, #0f3460);
                     border-left: 3px solid var(--accent, #e94560);
                     padding-left: 9px;
+                }
+                .song-row.current .song-name {
+                    color: var(--accent, #e94560);
+                    font-weight: 600;
                 }
                 .song-row.playing .song-name {
                     color: var(--accent, #e94560);
@@ -211,6 +217,12 @@ class Playlist extends HTMLElement {
         this.updatePlaylistUI();
     }
 
+    /** @param {boolean} isPlaying */
+    set isPlaying(isPlaying) {
+        this._isPlaying = isPlaying;
+        this.updatePlaylistUI();
+    }
+
     /** @param {QueueModel} model */
     set model(model) {
         this._unsubscribe?.();
@@ -316,11 +328,14 @@ class Playlist extends HTMLElement {
         this.playlist.forEach((song, index) => {
             const row = document.createElement('div');
             row.className = 'song-row';
-            if (index === this.currentIndex) row.classList.add('playing');
+            const isCurrent = index === this.currentIndex;
+            const isActivelyPlaying = isCurrent && this._isPlaying;
+            if (isCurrent) row.classList.add('current');
+            if (isActivelyPlaying) row.classList.add('playing');
 
             const score = scoreService.get(song);
             row.innerHTML = /*html*/`
-                ${index === this.currentIndex ? '<div class="eq-bars"><div class="eq-bar"></div><div class="eq-bar"></div><div class="eq-bar"></div></div>' : '<span class="drag-handle">⠿</span>'}
+                ${isActivelyPlaying ? '<div class="eq-bars"><div class="eq-bar"></div><div class="eq-bar"></div><div class="eq-bar"></div></div>' : '<span class="drag-handle">⠿</span>'}
                 <span class="song-name" title="${song}">${getDisplayName(song)}</span>
                 <span class="score-badge">${score}</span>
                 <button class="delete-btn" title="Remove">✕</button>
@@ -355,9 +370,9 @@ class Playlist extends HTMLElement {
             list.appendChild(row);
         });
 
-        const playing = list.querySelector('.song-row.playing');
-        if (playing) {
-            playing.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        const current = list.querySelector('.song-row.current');
+        if (current) {
+            current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
     }
 

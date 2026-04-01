@@ -45,6 +45,9 @@ import './components/Playlist.js';
             void updateLibrary();
             playerController.refreshCurrentScore();
         },
+        onPlaybackStateChange: (isPlaying) => {
+            playlistComponent.isPlaying = isPlaying;
+        },
         getDisplayName,
         getSongScore: (path) => path && songScores ? songScores.get(path) : null
     });

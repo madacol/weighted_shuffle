@@ -94,6 +94,7 @@ describe('createPlayerController', () => {
         const previousButton = new FakeElement();
         const nowPlayingEl = new FakeElement();
         const nowPlayingScoreEl = new FakeElement();
+        const playbackStates = [];
 
         const controller = createPlayerController({
             audioPlayer,
@@ -106,6 +107,9 @@ describe('createPlayerController', () => {
             onNext() {},
             onPrevious() {},
             onEnded() {},
+            onPlaybackStateChange(isPlaying) {
+                playbackStates.push(isPlaying);
+            },
             getDisplayName: (path) => path.replace('.mp3', ''),
             getSongScore: () => 7
         });
@@ -117,6 +121,7 @@ describe('createPlayerController', () => {
         expect(nowPlayingEl.textContent).toBe('song-a');
         expect(nowPlayingScoreEl.textContent).toBe('Score: 7');
         expect(navigator.mediaSession.metadata.title).toBe('song-a');
+        expect(playbackStates).toEqual([true]);
     });
 
     test('transport buttons delegate to playback callbacks and refreshCurrentScore rereads state', async () => {
@@ -128,6 +133,7 @@ describe('createPlayerController', () => {
         const nowPlayingEl = new FakeElement();
         const nowPlayingScoreEl = new FakeElement();
         const transportCalls = [];
+        const playbackStates = [];
         let score = 3;
 
         const controller = createPlayerController({
@@ -145,6 +151,9 @@ describe('createPlayerController', () => {
                 transportCalls.push('previous');
             },
             onEnded() {},
+            onPlaybackStateChange(isPlaying) {
+                playbackStates.push(isPlaying);
+            },
             getDisplayName: (path) => path,
             getSongScore: () => score
         });
@@ -162,5 +171,6 @@ describe('createPlayerController', () => {
         expect(audioPlayer.pauseCalls).toBe(1);
         expect(transportCalls).toEqual(['next', 'previous']);
         expect(nowPlayingScoreEl.textContent).toBe('Score: 9');
+        expect(playbackStates).toEqual([true, false, true]);
     });
 });

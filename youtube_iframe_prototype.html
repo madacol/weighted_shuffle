@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Music IFrame Prototype</title>
+    <style>
+        :root {
+            --bg: #111317;
+            --panel: #1b1f27;
+            --panel-2: #242a35;
+            --text: #f3f5f7;
+            --muted: #9aa3b2;
+            --border: #343b49;
+            --accent: #e94560;
+            --accent-2: #4ecca3;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background: var(--bg);
+            color: var(--text);
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            display: grid;
+            grid-template-rows: auto 1fr;
+        }
+
+        header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+            background: var(--panel);
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 18px;
+            letter-spacing: 0;
+        }
+
+        main {
+            display: grid;
+            grid-template-columns: minmax(320px, 1fr) 360px;
+            gap: 20px;
+            padding: 20px;
+            min-height: 0;
+        }
+
+        .stage,
+        .side {
+            min-width: 0;
+        }
+
+        .player-shell {
+            background: #000;
+            border: 1px solid var(--border);
+            aspect-ratio: 16 / 9;
+            width: 100%;
+        }
+
+        #youtube-player {
+            width: 100%;
+            height: 100%;
+        }
+
+        .controls,
+        .log-panel {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            padding: 14px;
+        }
+
+        .controls {
+            margin-top: 16px;
+        }
+
+        .link-row {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        input[type="url"],
+        input[type="range"] {
+            width: 100%;
+        }
+
+        input[type="url"] {
+            min-width: 0;
+            height: 40px;
+            padding: 0 12px;
+            background: var(--panel-2);
+            border: 1px solid var(--border);
+            color: var(--text);
+            font: inherit;
+        }
+
+        button {
+            height: 40px;
+            border: 1px solid var(--border);
+            background: var(--panel-2);
+            color: var(--text);
+            font: inherit;
+            cursor: pointer;
+            padding: 0 14px;
+        }
+
+        button:hover {
+            border-color: var(--accent);
+        }
+
+        .button-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 8px;
+            margin: 12px 0;
+        }
+
+        .readout {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 10px;
+            color: var(--muted);
+            font-size: 13px;
+            margin-top: 8px;
+        }
+
+        .status {
+            color: var(--accent-2);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .log-panel {
+            height: 100%;
+            overflow: auto;
+        }
+
+        .log-panel h2 {
+            margin: 0 0 10px;
+            font-size: 13px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        #event-log {
+            margin: 0;
+            padding: 0;
+            list-style: none;
+            color: var(--muted);
+            font-size: 13px;
+            line-height: 1.45;
+            overflow-wrap: anywhere;
+        }
+
+        #event-log li {
+            border-top: 1px solid var(--border);
+            padding: 8px 0;
+        }
+
+        @media (max-width: 860px) {
+            main {
+                grid-template-columns: 1fr;
+            }
+
+            .button-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>YouTube Music IFrame Prototype</h1>
+    </header>
+
+    <main>
+        <section class="stage">
+            <div class="player-shell">
+                <div id="youtube-player"></div>
+            </div>
+
+            <div class="controls">
+                <form id="link-form" class="link-row">
+                    <input id="youtube-link" type="url" placeholder="Paste https://music.youtube.com/watch?v=...">
+                    <button type="submit">Load</button>
+                </form>
+
+                <div class="button-grid">
+                    <button id="play" type="button">Play</button>
+                    <button id="pause" type="button">Pause</button>
+                    <button id="back" type="button">-10s</button>
+                    <button id="forward" type="button">+10s</button>
+                </div>
+
+                <label>
+                    Seek
+                    <input id="seek" type="range" min="0" max="1000" value="0" step="1">
+                </label>
+
+                <label>
+                    Volume
+                    <input id="volume" type="range" min="0" max="100" value="80" step="1">
+                </label>
+
+                <div class="readout">
+                    <span id="state" class="status">Waiting for YouTube API</span>
+                    <span id="time">0:00 / 0:00</span>
+                </div>
+            </div>
+        </section>
+
+        <aside class="side">
+            <div class="log-panel">
+                <h2>Player Events</h2>
+                <ul id="event-log"></ul>
+            </div>
+        </aside>
+    </main>
+
+    <script src="https://www.youtube.com/iframe_api"></script>
+    <script>
+        const stateNames = {
+            [-1]: 'unstarted',
+            0: 'ended',
+            1: 'playing',
+            2: 'paused',
+            3: 'buffering',
+            5: 'cued'
+        };
+
+        const form = document.getElementById('link-form');
+        const linkInput = document.getElementById('youtube-link');
+        const playButton = document.getElementById('play');
+        const pauseButton = document.getElementById('pause');
+        const backButton = document.getElementById('back');
+        const forwardButton = document.getElementById('forward');
+        const seekInput = document.getElementById('seek');
+        const volumeInput = document.getElementById('volume');
+        const stateEl = document.getElementById('state');
+        const timeEl = document.getElementById('time');
+        const eventLog = document.getElementById('event-log');
+
+        let player = null;
+        let isSeeking = false;
+
+        function logEvent(message) {
+            const item = document.createElement('li');
+            item.textContent = `${new Date().toLocaleTimeString()} - ${message}`;
+            eventLog.prepend(item);
+        }
+
+        function setState(message) {
+            stateEl.textContent = message;
+            logEvent(message);
+        }
+
+        function formatTime(seconds) {
+            if (!Number.isFinite(seconds)) return '0:00';
+            const minutes = Math.floor(seconds / 60);
+            const remainingSeconds = Math.floor(seconds % 60).toString().padStart(2, '0');
+            return `${minutes}:${remainingSeconds}`;
+        }
+
+        function getVideoId(value) {
+            let url;
+            try {
+                url = new URL(value.trim());
+            } catch {
+                return null;
+            }
+
+            const host = url.hostname.replace(/^www\./, '');
+            if (host === 'youtu.be') return url.pathname.split('/').filter(Boolean)[0] || null;
+
+            if (host === 'youtube.com' || host === 'm.youtube.com' || host === 'music.youtube.com') {
+                if (url.pathname === '/watch') return url.searchParams.get('v');
+                const parts = url.pathname.split('/').filter(Boolean);
+                if (parts[0] === 'embed' || parts[0] === 'shorts') return parts[1] || null;
+            }
+
+            return null;
+        }
+
+        function seekBy(deltaSeconds) {
+            if (!player || typeof player.getCurrentTime !== 'function') return;
+            player.seekTo(Math.max(0, player.getCurrentTime() + deltaSeconds), true);
+        }
+
+        function loadVideoId(videoId) {
+            if (!player || !videoId) return;
+            player.loadVideoById(videoId);
+            setState(`Loaded ${videoId}`);
+        }
+
+        function loadInitialVideoFromQuery() {
+            const params = new URLSearchParams(window.location.search);
+            const fromUrl = params.get('url') ? getVideoId(params.get('url')) : null;
+            const fromId = params.get('v');
+            loadVideoId(fromUrl || fromId);
+        }
+
+        function syncProgress() {
+            if (!player || typeof player.getDuration !== 'function') return;
+
+            const duration = player.getDuration() || 0;
+            const current = player.getCurrentTime() || 0;
+            if (!isSeeking && duration > 0) {
+                seekInput.value = Math.round((current / duration) * 1000);
+            }
+            timeEl.textContent = `${formatTime(current)} / ${formatTime(duration)}`;
+        }
+
+        form.addEventListener('submit', (event) => {
+            event.preventDefault();
+            const videoId = getVideoId(linkInput.value);
+            if (!videoId) {
+                setState('Could not parse a YouTube video id from that link');
+                return;
+            }
+
+            loadVideoId(videoId);
+        });
+
+        playButton.addEventListener('click', () => player?.playVideo());
+        pauseButton.addEventListener('click', () => player?.pauseVideo());
+        backButton.addEventListener('click', () => seekBy(-10));
+        forwardButton.addEventListener('click', () => seekBy(10));
+
+        seekInput.addEventListener('input', () => {
+            isSeeking = true;
+        });
+
+        seekInput.addEventListener('change', () => {
+            if (!player) return;
+            const duration = player.getDuration() || 0;
+            player.seekTo((Number(seekInput.value) / 1000) * duration, true);
+            isSeeking = false;
+        });
+
+        volumeInput.addEventListener('input', () => {
+            player?.setVolume(Number(volumeInput.value));
+        });
+
+        window.onYouTubeIframeAPIReady = () => {
+            player = new YT.Player('youtube-player', {
+                width: '100%',
+                height: '100%',
+                playerVars: {
+                    controls: 0,
+                    disablekb: 1,
+                    playsinline: 1,
+                    rel: 0
+                },
+                events: {
+                    onReady() {
+                        player.setVolume(Number(volumeInput.value));
+                        setState('YouTube API ready');
+                        loadInitialVideoFromQuery();
+                    },
+                    onStateChange(event) {
+                        const state = stateNames[event.data] || `unknown (${event.data})`;
+                        setState(`State: ${state}`);
+                    },
+                    onError(event) {
+                        setState(`Error: ${event.data}`);
+                    }
+                }
+            });
+        };
+
+        setInterval(syncProgress, 500);
+    </script>
+</body>
+</html>

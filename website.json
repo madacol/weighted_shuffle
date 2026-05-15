@@ -1,0 +1,6 @@
+{
+  "subdomain": "music-player",
+  "static": {
+    "root": "."
+  }
+}

@@ -7,6 +7,8 @@
  *   previousButton: HTMLButtonElement,
  *   nowPlayingEl: HTMLElement,
  *   nowPlayingScoreEl: HTMLElement,
+ *   youtubePlayerEl?: HTMLElement|null,
+ *   youtubePlayerShell?: HTMLElement|null,
  *   onNext: () => void,
  *   onPrevious: () => void,
  *   onEnded: () => void,
@@ -15,6 +17,27 @@
  *   getSongScore: (path: string|null) => number|null
  * }} options
  */
+let youtubeApiPromise = null;
+
+function loadYouTubeIframeApi() {
+    if (window.YT?.Player) return Promise.resolve(window.YT);
+    if (youtubeApiPromise) return youtubeApiPromise;
+
+    youtubeApiPromise = new Promise((resolve) => {
+        const previousCallback = window.onYouTubeIframeAPIReady;
+        window.onYouTubeIframeAPIReady = () => {
+            previousCallback?.();
+            resolve(window.YT);
+        };
+
+        const script = document.createElement('script');
+        script.src = 'https://www.youtube.com/iframe_api';
+        document.head.appendChild(script);
+    });
+
+    return youtubeApiPromise;
+}
+
 export function createPlayerController({
     audioPlayer,
     seekBar,
@@ -23,6 +46,8 @@ export function createPlayerController({
     previousButton,
     nowPlayingEl,
     nowPlayingScoreEl,
+    youtubePlayerEl = null,
+    youtubePlayerShell = null,
     onNext,
     onPrevious,
     onEnded,
@@ -32,21 +57,27 @@ export function createPlayerController({
 }) {
     let currentPath = null;
     let currentObjectUrl = null;
+    let activePlayer = 'audio';
+    let youtubePlayer = null;
+    let youtubePlayerPromise = null;
+    let youtubeProgressHandle = null;
 
     audioPlayer.addEventListener('play', () => {
+        if (activePlayer !== 'audio') return;
         playPauseButton.classList.add('is-playing');
         playPauseButton.title = 'Pause';
         onPlaybackStateChange(true);
     });
 
     audioPlayer.addEventListener('pause', () => {
+        if (activePlayer !== 'audio') return;
         playPauseButton.classList.remove('is-playing');
         playPauseButton.title = 'Play';
         onPlaybackStateChange(false);
     });
 
     audioPlayer.addEventListener('timeupdate', () => {
-        if (!audioPlayer.duration) return;
+        if (activePlayer !== 'audio' || !audioPlayer.duration) return;
 
         const percent = (audioPlayer.currentTime / audioPlayer.duration) * 1000;
         seekBar.value = percent;
@@ -55,11 +86,29 @@ export function createPlayerController({
     });
 
     seekBar.addEventListener('input', () => {
+        if (activePlayer === 'youtube') {
+            if (!youtubePlayer?.getDuration) return;
+            const duration = youtubePlayer.getDuration();
+            youtubePlayer.seekTo((seekBar.value / 1000) * duration, true);
+            return;
+        }
+
         if (!audioPlayer.duration) return;
         audioPlayer.currentTime = (seekBar.value / 1000) * audioPlayer.duration;
     });
 
     playPauseButton.addEventListener('click', () => {
+        if (activePlayer === 'youtube') {
+            const state = youtubePlayer?.getPlayerState?.();
+            if (state === window.YT?.PlayerState?.PLAYING) {
+                youtubePlayer.pauseVideo();
+                return;
+            }
+
+            youtubePlayer?.playVideo();
+            return;
+        }
+
         if (audioPlayer.paused) {
             void audioPlayer.play();
             return;
@@ -71,6 +120,7 @@ export function createPlayerController({
     nextButton.addEventListener('click', onNext);
     previousButton.addEventListener('click', onPrevious);
     audioPlayer.addEventListener('ended', () => {
+        if (activePlayer !== 'audio') return;
         onPlaybackStateChange(false);
         onEnded();
     });
@@ -101,6 +151,98 @@ export function createPlayerController({
         nowPlayingScoreEl.textContent = score === null ? '' : `Score: ${score}`;
     }
 
+    function setPlaybackUi(isPlaying) {
+        playPauseButton.classList.toggle('is-playing', isPlaying);
+        playPauseButton.title = isPlaying ? 'Pause' : 'Play';
+        onPlaybackStateChange(isPlaying);
+    }
+
+    function updateNowPlaying(path) {
+        currentPath = path;
+        nowPlayingEl.textContent = getDisplayName(path);
+        nowPlayingEl.title = path;
+        refreshCurrentScore();
+        updateMediaSessionMetadata(getDisplayName(path));
+    }
+
+    function clearObjectUrl() {
+        if (!currentObjectUrl) return;
+
+        URL.revokeObjectURL(currentObjectUrl);
+        currentObjectUrl = null;
+    }
+
+    function stopYouTubeProgressSync() {
+        if (!youtubeProgressHandle) return;
+
+        clearInterval(youtubeProgressHandle);
+        youtubeProgressHandle = null;
+    }
+
+    function startYouTubeProgressSync() {
+        stopYouTubeProgressSync();
+        youtubeProgressHandle = setInterval(() => {
+            if (activePlayer !== 'youtube' || !youtubePlayer?.getDuration) return;
+
+            const duration = youtubePlayer.getDuration();
+            if (!duration) return;
+
+            const percent = (youtubePlayer.getCurrentTime() / duration) * 1000;
+            seekBar.value = percent;
+            const pct = (percent / 10).toFixed(1);
+            seekBar.style.background = `linear-gradient(to right, var(--accent) ${pct}%, var(--border) ${pct}%)`;
+        }, 500);
+    }
+
+    function showYouTubePlayer() {
+        if (!youtubePlayerShell) return;
+        youtubePlayerShell.hidden = false;
+    }
+
+    function hideYouTubePlayer() {
+        if (!youtubePlayerShell) return;
+        youtubePlayerShell.hidden = true;
+    }
+
+    async function getYouTubePlayer() {
+        if (youtubePlayer) return youtubePlayer;
+        if (youtubePlayerPromise) return youtubePlayerPromise;
+        if (!youtubePlayerEl) throw new Error('YouTube player element not configured');
+
+        youtubePlayerPromise = loadYouTubeIframeApi().then(YT => new Promise((resolve) => {
+            youtubePlayer = new YT.Player(youtubePlayerEl, {
+                width: '100%',
+                height: '100%',
+                playerVars: {
+                    controls: 0,
+                    disablekb: 1,
+                    playsinline: 1,
+                    rel: 0
+                },
+                events: {
+                    onReady() {
+                        resolve(youtubePlayer);
+                    },
+                    onStateChange(event) {
+                        if (activePlayer !== 'youtube') return;
+
+                        if (event.data === YT.PlayerState.PLAYING) {
+                            setPlaybackUi(true);
+                        } else if (event.data === YT.PlayerState.PAUSED || event.data === YT.PlayerState.ENDED) {
+                            setPlaybackUi(false);
+                        }
+
+                        if (event.data === YT.PlayerState.ENDED) {
+                            onEnded();
+                        }
+                    }
+                }
+            });
+        }));
+
+        return youtubePlayerPromise;
+    }
+
     return {
         /**
          * @param {File} file
@@ -108,9 +250,11 @@ export function createPlayerController({
          * @returns {Promise<void>}
          */
         async playFile(file, path) {
-            if (currentObjectUrl) {
-                URL.revokeObjectURL(currentObjectUrl);
-            }
+            activePlayer = 'audio';
+            stopYouTubeProgressSync();
+            youtubePlayer?.pauseVideo?.();
+            hideYouTubePlayer();
+            clearObjectUrl();
 
             currentObjectUrl = URL.createObjectURL(file);
             audioPlayer.src = currentObjectUrl;
@@ -122,11 +266,26 @@ export function createPlayerController({
                 if (error.name !== 'NotAllowedError') throw error;
             }
 
-            currentPath = path;
-            nowPlayingEl.textContent = getDisplayName(path);
-            nowPlayingEl.title = path;
-            refreshCurrentScore();
-            updateMediaSessionMetadata(getDisplayName(path));
+            updateNowPlaying(path);
+        },
+
+        /**
+         * @param {string} videoId
+         * @param {string} path
+         * @returns {Promise<void>}
+         */
+        async playYouTubeVideo(videoId, path) {
+            activePlayer = 'youtube';
+            audioPlayer.pause();
+            audioPlayer.removeAttribute('src');
+            clearObjectUrl();
+            showYouTubePlayer();
+            resetSeekBar();
+            updateNowPlaying(path);
+
+            const player = await getYouTubePlayer();
+            player.loadVideoById(videoId);
+            startYouTubeProgressSync();
         },
 
         refreshCurrentScore,

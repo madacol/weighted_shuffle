@@ -4,6 +4,7 @@ import { createQueueModel } from './queue_model.js';
 import { createPlayerController } from './player_controller.js';
 import { rememberSelectedFolder, recallSelectedFolder } from './file_handle_store.js';
 import { scanAudioFiles, openSongFile } from './music_folder.js';
+import { getSongDisplayName, getYouTubeVideoId, isYouTubeMusicLink, normalizeYouTubeMusicLink } from './media_source.js';
 import './components/Library.js';
 import './components/Playlist.js';
 
@@ -18,6 +19,8 @@ import './components/Playlist.js';
     const nowPlayingScoreEl = document.getElementById('nowPlayingScore');
     const upvoteBtn = document.getElementById('upvote');
     const downvoteBtn = document.getElementById('downvote');
+    const youtubePlayerEl = document.getElementById('youtubePlayer');
+    const youtubePlayerShell = document.getElementById('youtube-player-shell');
 
     /** @type {FileSystemDirectoryHandle|null} */
     let musicFolderHandle = null;
@@ -38,6 +41,8 @@ import './components/Playlist.js';
         previousButton: previousBtn,
         nowPlayingEl,
         nowPlayingScoreEl,
+        youtubePlayerEl,
+        youtubePlayerShell,
         onNext: () => playlistComponent.playNext(),
         onPrevious: () => playlistComponent.playPrevious(),
         onEnded: () => {
@@ -78,6 +83,7 @@ import './components/Playlist.js';
     });
 
     libraryComponent.addEventListener('play-song', (event) => void playSong(event.detail.song));
+    libraryComponent.addEventListener('add-youtube-link', (event) => void addYouTubeMusicLink(event.detail.link));
     playlistComponent.addEventListener('play-song', (event) => void playSong(event.detail.song));
 
     function showFolderSelectionPopover() {
@@ -114,9 +120,9 @@ import './components/Playlist.js';
         btn.addEventListener('animationend', () => btn.classList.remove('vote-pulse'), { once: true });
     }
 
-    /** @param {string} path */
-    function getDisplayName(path) {
-        return path.split('/').pop().replace(/\.[^.]+$/, '');
+    /** @param {string} source */
+    function getDisplayName(source) {
+        return getSongDisplayName(source);
     }
 
     /**
@@ -164,9 +170,34 @@ import './components/Playlist.js';
     }
 
     /**
+     * @param {string} rawLink
+     */
+    async function addYouTubeMusicLink(rawLink) {
+        if (!songCatalog) {
+            showFolderSelectionPopover();
+            return;
+        }
+
+        try {
+            const link = normalizeYouTubeMusicLink(rawLink);
+            await songCatalog.addMissing([link]);
+            await updateLibrary();
+        } catch (error) {
+            console.error('Failed to add YouTube Music link:', error);
+        }
+    }
+
+    /**
      * @param {string} path
      */
     async function playSong(path) {
+        if (isYouTubeMusicLink(path)) {
+            const videoId = getYouTubeVideoId(path);
+            await playerController.playYouTubeVideo(videoId, path);
+            playlistComponent.fillPlaylist();
+            return;
+        }
+
         try {
             const file = await openSongFile(musicFolderHandle, path);
             await playerController.playFile(file, path);

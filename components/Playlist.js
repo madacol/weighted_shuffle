@@ -1,4 +1,5 @@
 import { MIN_SCORE, MAX_SCORE } from '../config.js';
+import { getSongDisplayName } from '../media_source.js';
 
 /**
  * @typedef {{
@@ -25,11 +26,6 @@ import { MIN_SCORE, MAX_SCORE } from '../config.js';
  *   handleSongEnd(): string|null
  * }} QueueModel
  */
-
-/** @param {string} path */
-function getDisplayName(path) {
-    return path.split('/').pop().replace(/\.[^.]+$/, '');
-}
 
 class Playlist extends HTMLElement {
     constructor() {
@@ -336,10 +332,13 @@ class Playlist extends HTMLElement {
             const score = scoreService.get(song);
             row.innerHTML = /*html*/`
                 ${isActivelyPlaying ? '<div class="eq-bars"><div class="eq-bar"></div><div class="eq-bar"></div><div class="eq-bar"></div></div>' : '<span class="drag-handle">⠿</span>'}
-                <span class="song-name" title="${song}">${getDisplayName(song)}</span>
+                <span class="song-name"></span>
                 <span class="score-badge">${score}</span>
                 <button class="delete-btn" title="Remove">✕</button>
             `;
+            const name = row.querySelector('.song-name');
+            name.title = song;
+            name.textContent = getSongDisplayName(song);
 
             row.setAttribute('draggable', 'true');
             row.addEventListener('dragstart', (event) => {

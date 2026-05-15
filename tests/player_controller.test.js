@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { createPlayerController } from '../player_controller.js';
 
+const NativeURL = globalThis.URL;
+
 class FakeClassList {
     constructor() {
         this.values = new Set();
@@ -76,11 +78,12 @@ beforeEach(() => {
 
     Object.defineProperty(globalThis, 'URL', {
         configurable: true,
-        value: {
-            createObjectURL() {
+        value: class TestURL extends NativeURL {
+            static createObjectURL() {
                 return 'blob:test-song';
-            },
-            revokeObjectURL() {}
+            }
+
+            static revokeObjectURL() {}
         }
     });
 });

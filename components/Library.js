@@ -1,4 +1,5 @@
 import { MIN_SCORE, MAX_SCORE } from '../config.js';
+import { getSongDisplayName } from '../media_source.js';
 
 /**
  * @typedef {{
@@ -6,11 +7,6 @@ import { MIN_SCORE, MAX_SCORE } from '../config.js';
  *   set(path: string, score: number): Promise<number>
  * }} SongScoreService
  */
-
-/** @param {string} path */
-function getDisplayName(path) {
-    return path.split('/').pop().replace(/\.[^.]+$/, '');
-}
 
 /** @param {number} score */
 function getScoreColor(score) {
@@ -67,6 +63,43 @@ class Library extends HTMLElement {
                     outline: none;
                     transition: border-color 0.2s;
                     font-family: inherit;
+                }
+                .link-form {
+                    display: flex;
+                    gap: 8px;
+                    margin-bottom: 12px;
+                }
+                .link-input {
+                    min-width: 0;
+                    flex: 1;
+                    padding: 10px 14px;
+                    background: var(--bg-secondary, #1a1a2e);
+                    border: 1px solid var(--border, #2a2a3a);
+                    border-radius: 8px;
+                    color: var(--text-primary, #e0e0e0);
+                    font-size: 14px;
+                    box-sizing: border-box;
+                    outline: none;
+                    font-family: inherit;
+                }
+                .link-input:focus {
+                    border-color: var(--accent, #e94560);
+                }
+                .add-link-btn {
+                    border: 1px solid var(--border, #2a2a3a);
+                    border-radius: 8px;
+                    background: var(--bg-tertiary, #16213e);
+                    color: var(--text-secondary, #a0a0b0);
+                    cursor: pointer;
+                    font: inherit;
+                    font-weight: 700;
+                    min-width: 42px;
+                    transition: border-color 0.2s, color 0.2s, background-color 0.2s;
+                }
+                .add-link-btn:hover {
+                    border-color: var(--accent, #e94560);
+                    color: var(--text-primary, #e0e0e0);
+                    background: var(--bg-hover, #2a2a4a);
                 }
                 .search-input:focus {
                     border-color: var(--accent, #e94560);
@@ -139,9 +172,26 @@ class Library extends HTMLElement {
                 }
             </style>
             <div class="panel-header">Library</div>
+            <form class="link-form">
+                <input class="link-input" type="url" placeholder="Paste YouTube Music link">
+                <button class="add-link-btn" type="submit" title="Add YouTube Music link">+</button>
+            </form>
             <input class="search-input" type="text" placeholder="Filter songs…">
             <div class="song-list"></div>
         `;
+        this.shadowRoot.querySelector('.link-form').addEventListener('submit', (event) => {
+            event.preventDefault();
+            const input = this.shadowRoot.querySelector('.link-input');
+            const value = input.value.trim();
+            if (!value) return;
+
+            this.dispatchEvent(new CustomEvent('add-youtube-link', {
+                bubbles: true,
+                composed: true,
+                detail: { link: value }
+            }));
+            input.value = '';
+        });
         this.shadowRoot.querySelector('.search-input').addEventListener('input', (e) => {
             this._filterSongs(e.target.value);
         });
@@ -183,9 +233,12 @@ class Library extends HTMLElement {
             row.setAttribute('data-path', path);
             row.setAttribute('draggable', 'true');
             row.innerHTML = /*html*/`
-                <span class="song-name" title="${path}">${getDisplayName(path)}</span>
+                <span class="song-name"></span>
                 <span class="score-badge" style="border-left: 3px solid ${getScoreColor(score)}">${score}</span>
             `;
+            const name = row.querySelector('.song-name');
+            name.title = path;
+            name.textContent = getSongDisplayName(path);
 
             row.addEventListener('dragstart', (event) => {
                 event.dataTransfer.setData('text/plain', path);

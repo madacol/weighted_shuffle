@@ -1,16 +1,16 @@
 /** @type {Promise<IDBDatabase>} */
 const dbPromise = new Promise((resolve, reject) => {
     const request = indexedDB.open('weighted_shuffle', 1);
-    request.onupgradeneeded = (event) => {
-        const db = event.target.result;
+    request.onupgradeneeded = () => {
+        const db = request.result;
         db.createObjectStore('handles', { keyPath: 'id' });
     };
-    request.onsuccess = (event) => {
-        resolve(event.target.result);
+    request.onsuccess = () => {
+        resolve(request.result);
     };
-    request.onerror = (event) => {
-        console.error(event);
-        reject(event.target.error);
+    request.onerror = () => {
+        console.error(request.error);
+        reject(request.error);
     };
 });
 
@@ -41,7 +41,7 @@ export const recallSelectedFolder = () => {
             const transaction = db.transaction(['handles'], 'readonly');
             const store = transaction.objectStore('handles');
             const request = store.get('lastFolder');
-            request.onsuccess = (event) => resolve(event.target.result?.handle);
+            request.onsuccess = () => resolve(request.result?.handle);
             request.onerror = () => reject(request.error);
         });
     });

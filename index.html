@@ -11,7 +11,10 @@
 <body>
     <header>
         <h1>Weighted Shuffle</h1>
-        <button id="selectFolder">📂 Select Folder</button>
+        <div class="header-actions">
+            <button id="keyboardHelp" title="Keyboard shortcuts" aria-label="Keyboard shortcuts">?</button>
+            <button id="selectFolder">📂 Select Folder</button>
+        </div>
     </header>
     <music-playlist></music-playlist>
     <music-library></music-library>
@@ -28,6 +31,7 @@
             <button id="previous" class="transport-btn" title="Previous"></button>
             <button id="playPause" class="transport-btn play-btn" title="Play"></button>
             <button id="next" class="transport-btn" title="Next"></button>
+            <button id="repeat" class="transport-btn repeat-btn" title="Repeat off" aria-label="Repeat off" aria-pressed="false" data-repeat-mode="off"></button>
         </div>
         <div id="vote-controls">
             <button id="downvote" class="vote-btn downvote-btn" title="Downvote">👎</button>
@@ -35,5 +39,24 @@
         </div>
         <audio id="audioPlayer"></audio>
     </div>
+    <dialog id="keyboardShortcutsDialog" aria-labelledby="keyboardShortcutsTitle">
+        <div class="shortcuts-dialog">
+            <div class="shortcuts-header">
+                <h2 id="keyboardShortcutsTitle">Keyboard shortcuts</h2>
+                <button id="closeKeyboardShortcuts" class="close-dialog-btn" title="Close" aria-label="Close keyboard shortcuts">✕</button>
+            </div>
+            <dl class="shortcut-list">
+                <div><dt><kbd>Space</kbd> / <kbd>K</kbd></dt><dd>Play or pause</dd></div>
+                <div><dt><kbd>N</kbd></dt><dd>Next song</dd></div>
+                <div><dt><kbd>P</kbd></dt><dd>Previous song</dd></div>
+                <div><dt><kbd>J</kbd> / <kbd>←</kbd></dt><dd>Seek back 10 seconds</dd></div>
+                <div><dt><kbd>L</kbd> / <kbd>→</kbd></dt><dd>Seek forward 10 seconds</dd></div>
+                <div><dt><kbd>R</kbd></dt><dd>Cycle repeat off, repeat all, repeat one</dd></div>
+                <div><dt><kbd>?</kbd></dt><dd>Show or hide this menu</dd></div>
+                <div><dt><kbd>↑</kbd> / <kbd>↓</kbd></dt><dd>Move through focused Library or Queue rows</dd></div>
+                <div><dt><kbd>Enter</kbd></dt><dd>Add a Library song to Queue or play a queued song</dd></div>
+            </dl>
+        </div>
+    </dialog>
 </body>
 </html>

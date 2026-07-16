@@ -99,7 +99,7 @@ describe('createPlayerController', () => {
         const nowPlayingScoreEl = new FakeElement();
         const playbackStates = [];
 
-        const controller = createPlayerController({
+        const controller = createPlayerController(/** @type {any} */ ({
             audioPlayer,
             seekBar,
             playPauseButton,
@@ -115,9 +115,9 @@ describe('createPlayerController', () => {
             },
             getDisplayName: (path) => path.replace('.mp3', ''),
             getSongScore: () => 7
-        });
+        }));
 
-        await controller.playFile({}, 'song-a.mp3');
+        await controller.playFile(new Blob(), 'song-a.mp3');
 
         expect(audioPlayer.src).toBe('blob:test-song');
         expect(audioPlayer.playCalls).toBe(1);
@@ -139,7 +139,7 @@ describe('createPlayerController', () => {
         const playbackStates = [];
         let score = 3;
 
-        const controller = createPlayerController({
+        const controller = createPlayerController(/** @type {any} */ ({
             audioPlayer,
             seekBar,
             playPauseButton,
@@ -159,14 +159,14 @@ describe('createPlayerController', () => {
             },
             getDisplayName: (path) => path,
             getSongScore: () => score
-        });
+        }));
 
         playPauseButton.dispatchEvent(new Event('click'));
         playPauseButton.dispatchEvent(new Event('click'));
         nextButton.dispatchEvent(new Event('click'));
         previousButton.dispatchEvent(new Event('click'));
 
-        await controller.playFile({}, 'song-a.mp3');
+        await controller.playFile(new Blob(), 'song-a.mp3');
         score = 9;
         controller.refreshCurrentScore();
 

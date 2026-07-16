@@ -16,7 +16,7 @@ function getScoreColor(score) {
     return 'var(--accent-green, #4ecca3)';
 }
 
-class Library extends HTMLElement {
+export class Library extends HTMLElement {
     constructor() {
         super();
         this.attachShadow({ mode: 'open' });
@@ -24,6 +24,8 @@ class Library extends HTMLElement {
         this._songs = [];
         /** @type {SongScoreService|null} */
         this._scoreService = null;
+        this._youtubeLinkStatus = '';
+        this._youtubeLinkStatusTone = 'neutral';
     }
 
     connectedCallback() {
@@ -67,7 +69,7 @@ class Library extends HTMLElement {
                 .link-form {
                     display: flex;
                     gap: 8px;
-                    margin-bottom: 12px;
+                    margin-bottom: 6px;
                 }
                 .link-input {
                     min-width: 0;
@@ -101,6 +103,25 @@ class Library extends HTMLElement {
                     color: var(--text-primary, #e0e0e0);
                     background: var(--bg-hover, #2a2a4a);
                 }
+                .link-help,
+                .link-status {
+                    margin: 0 4px 10px;
+                    font-size: 12px;
+                    line-height: 1.35;
+                    color: var(--text-muted, #606070);
+                }
+                .link-status {
+                    min-height: 16px;
+                }
+                .link-status[data-tone="success"] {
+                    color: var(--accent-green, #4ecca3);
+                }
+                .link-status[data-tone="error"] {
+                    color: var(--accent-red, #ff6b6b);
+                }
+                .link-status[data-tone="pending"] {
+                    color: var(--text-secondary, #a0a0b0);
+                }
                 .search-input:focus {
                     border-color: var(--accent, #e94560);
                 }
@@ -123,6 +144,11 @@ class Library extends HTMLElement {
                     transition: background-color 0.15s;
                 }
                 .song-row:hover {
+                    background: var(--bg-hover, #2a2a4a);
+                }
+                .song-row:focus-visible {
+                    outline: 2px solid var(--accent, #e94560);
+                    outline-offset: 2px;
                     background: var(--bg-hover, #2a2a4a);
                 }
                 .song-name {
@@ -173,28 +199,58 @@ class Library extends HTMLElement {
             </style>
             <div class="panel-header">Library</div>
             <form class="link-form">
-                <input class="link-input" type="url" placeholder="Paste YouTube Music link">
-                <button class="add-link-btn" type="submit" title="Add YouTube Music link">+</button>
+                <input class="link-input" type="url" placeholder="Paste YouTube or YouTube Music URL" aria-describedby="youtube-link-help youtube-link-status">
+                <button class="add-link-btn" type="submit" title="Add YouTube link to library and queue">+</button>
             </form>
+            <p class="link-help" id="youtube-link-help">Paste a YouTube or YouTube Music song URL. The plus button saves it and adds it to the Queue.</p>
+            <div class="link-status" id="youtube-link-status" role="status" aria-live="polite"></div>
             <input class="search-input" type="text" placeholder="Filter songs…">
             <div class="song-list"></div>
         `;
+        this._renderYouTubeLinkStatus();
         this.shadowRoot.querySelector('.link-form').addEventListener('submit', (event) => {
             event.preventDefault();
-            const input = this.shadowRoot.querySelector('.link-input');
+            const input = /** @type {HTMLInputElement} */ (this.shadowRoot.querySelector('.link-input'));
             const value = input.value.trim();
-            if (!value) return;
+            if (!value) {
+                this.setYouTubeLinkStatus('Paste a YouTube or YouTube Music link first.', 'error');
+                input.focus();
+                return;
+            }
 
+            this.setYouTubeLinkStatus('Adding link…', 'pending');
             this.dispatchEvent(new CustomEvent('add-youtube-link', {
                 bubbles: true,
                 composed: true,
                 detail: { link: value }
             }));
-            input.value = '';
         });
         this.shadowRoot.querySelector('.search-input').addEventListener('input', (e) => {
-            this._filterSongs(e.target.value);
+            this._filterSongs(/** @type {HTMLInputElement} */ (e.target).value);
         });
+    }
+
+    /**
+     * @param {string} message
+     * @param {'neutral'|'pending'|'success'|'error'} tone
+     */
+    setYouTubeLinkStatus(message, tone = 'neutral') {
+        this._youtubeLinkStatus = message;
+        this._youtubeLinkStatusTone = tone;
+        this._renderYouTubeLinkStatus();
+    }
+
+    clearYouTubeLinkInput() {
+        const input = /** @type {HTMLInputElement|null} */ (this.shadowRoot?.querySelector('.link-input'));
+        if (input) input.value = '';
+    }
+
+    _renderYouTubeLinkStatus() {
+        const status = /** @type {HTMLElement|null} */ (this.shadowRoot?.querySelector('.link-status'));
+        if (!status) return;
+
+        status.textContent = this._youtubeLinkStatus;
+        status.dataset.tone = this._youtubeLinkStatusTone;
     }
 
     /** @param {SongScoreService} scoreService */
@@ -208,18 +264,20 @@ class Library extends HTMLElement {
         return this._scoreService;
     }
 
+    /** @param {string} query */
     _filterSongs(query) {
         const q = query.toLowerCase();
-        const rows = this.shadowRoot.querySelectorAll('.song-row');
+        const rows = /** @type {NodeListOf<HTMLElement>} */ (this.shadowRoot.querySelectorAll('.song-row'));
         rows.forEach(row => {
-            const name = row.getAttribute('data-path').toLowerCase();
+            const name = row.getAttribute('data-path')?.toLowerCase() ?? '';
             row.style.display = name.includes(q) ? '' : 'none';
         });
     }
 
+    /** @param {Array<[string, number]>} songs */
     updateLibrary(songs) {
         this._songs = songs;
-        const list = this.shadowRoot.querySelector('.song-list');
+        const list = /** @type {HTMLElement} */ (this.shadowRoot.querySelector('.song-list'));
         list.innerHTML = '';
 
         if (songs.length === 0) {
@@ -232,16 +290,21 @@ class Library extends HTMLElement {
             row.className = 'song-row';
             row.setAttribute('data-path', path);
             row.setAttribute('draggable', 'true');
+            row.setAttribute('tabindex', '0');
+            row.setAttribute('role', 'button');
+            row.setAttribute('aria-label', `Add ${getSongDisplayName(path)} to queue`);
             row.innerHTML = /*html*/`
                 <span class="song-name"></span>
                 <span class="score-badge" style="border-left: 3px solid ${getScoreColor(score)}">${score}</span>
             `;
-            const name = row.querySelector('.song-name');
+            const name = /** @type {HTMLElement} */ (row.querySelector('.song-name'));
             name.title = path;
             name.textContent = getSongDisplayName(path);
+            const addSongToQueue = () => this._dispatchAddSongToQueue(path);
 
             row.addEventListener('dragstart', (event) => {
-                event.dataTransfer.setData('text/plain', path);
+                const dragEvent = /** @type {DragEvent} */ (event);
+                dragEvent.dataTransfer?.setData('text/plain', path);
                 this.dispatchEvent(new CustomEvent('song-drag-start', {
                     bubbles: true,
                     composed: true,
@@ -249,15 +312,21 @@ class Library extends HTMLElement {
                 }));
             });
 
-            row.querySelector('.song-name').addEventListener('click', () => {
-                this.dispatchEvent(new CustomEvent('play-song', {
-                    bubbles: true,
-                    composed: true,
-                    detail: { song: path }
-                }));
+            row.addEventListener('click', addSongToQueue);
+            row.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    addSongToQueue();
+                    return;
+                }
+
+                if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                    event.preventDefault();
+                    this._focusAdjacentSongRow(row, event.key === 'ArrowDown' ? 1 : -1);
+                }
             });
 
-            const badge = row.querySelector('.score-badge');
+            const badge = /** @type {HTMLElement} */ (row.querySelector('.score-badge'));
             badge.addEventListener('click', (e) => {
                 e.stopPropagation();
                 this._editScore(badge, path, score);
@@ -267,17 +336,44 @@ class Library extends HTMLElement {
         });
     }
 
+    /** @param {string} song */
+    _dispatchAddSongToQueue(song) {
+        this.dispatchEvent(new CustomEvent('add-song-to-queue', {
+            bubbles: true,
+            composed: true,
+            detail: { song }
+        }));
+    }
+
+    /**
+     * @param {HTMLElement} row
+     * @param {number} offset
+     */
+    _focusAdjacentSongRow(row, offset) {
+        const rows = Array.from(/** @type {NodeListOf<HTMLElement>} */ (this.shadowRoot.querySelectorAll('.song-row')))
+            .filter(candidate => candidate.style.display !== 'none');
+        const currentIndex = rows.indexOf(row);
+        const nextIndex = Math.max(0, Math.min(rows.length - 1, currentIndex + offset));
+        rows[nextIndex]?.focus();
+    }
+
+    /**
+     * @param {HTMLElement} badge
+     * @param {string} path
+     * @param {number} currentScore
+     */
     _editScore(badge, path, currentScore) {
         const scoreService = this._getScoreService();
         const input = document.createElement('input');
         input.type = 'number';
         input.className = 'score-input';
-        input.value = currentScore;
-        input.min = MIN_SCORE;
-        input.max = MAX_SCORE;
+        input.value = String(currentScore);
+        input.min = String(MIN_SCORE);
+        input.max = String(MAX_SCORE);
         badge.replaceWith(input);
         input.focus();
         input.select();
+        input.addEventListener('click', (e) => e.stopPropagation());
 
         const commit = async () => {
             const newScore = parseInt(input.value);
@@ -288,7 +384,7 @@ class Library extends HTMLElement {
             newBadge.className = 'score-badge';
             const finalScore = scoreService.get(path);
             newBadge.style.borderLeft = `3px solid ${getScoreColor(finalScore)}`;
-            newBadge.textContent = finalScore;
+            newBadge.textContent = String(finalScore);
             input.replaceWith(newBadge);
             newBadge.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -298,9 +394,10 @@ class Library extends HTMLElement {
 
         input.addEventListener('blur', commit);
         input.addEventListener('keydown', (e) => {
+            e.stopPropagation();
             if (e.key === 'Enter') input.blur();
             if (e.key === 'Escape') {
-                input.value = currentScore;
+                input.value = String(currentScore);
                 input.blur();
             }
         });

@@ -1,22 +1,4 @@
-/**
- * @param {{
- *   audioPlayer: HTMLAudioElement,
- *   seekBar: HTMLInputElement,
- *   playPauseButton: HTMLButtonElement,
- *   nextButton: HTMLButtonElement,
- *   previousButton: HTMLButtonElement,
- *   nowPlayingEl: HTMLElement,
- *   nowPlayingScoreEl: HTMLElement,
- *   youtubePlayerEl?: HTMLElement|null,
- *   youtubePlayerShell?: HTMLElement|null,
- *   onNext: () => void,
- *   onPrevious: () => void,
- *   onEnded: () => void,
- *   onPlaybackStateChange?: (isPlaying: boolean) => void,
- *   getDisplayName: (path: string) => string,
- *   getSongScore: (path: string|null) => number|null
- * }} options
- */
+/** @type {Promise<YouTubeIframeApi>|null} */
 let youtubeApiPromise = null;
 
 function loadYouTubeIframeApi() {
@@ -38,6 +20,25 @@ function loadYouTubeIframeApi() {
     return youtubeApiPromise;
 }
 
+/**
+ * @param {{
+ *   audioPlayer: HTMLAudioElement,
+ *   seekBar: HTMLInputElement,
+ *   playPauseButton: HTMLButtonElement,
+ *   nextButton: HTMLButtonElement,
+ *   previousButton: HTMLButtonElement,
+ *   nowPlayingEl: HTMLElement,
+ *   nowPlayingScoreEl: HTMLElement,
+ *   youtubePlayerEl?: HTMLElement|null,
+ *   youtubePlayerShell?: HTMLElement|null,
+ *   onNext: () => void,
+ *   onPrevious: () => void,
+ *   onEnded: () => void,
+ *   onPlaybackStateChange?: (isPlaying: boolean) => void,
+ *   getDisplayName: (path: string) => string,
+ *   getSongScore: (path: string|null) => number|null
+ * }} options
+ */
 export function createPlayerController({
     audioPlayer,
     seekBar,
@@ -51,15 +52,21 @@ export function createPlayerController({
     onNext,
     onPrevious,
     onEnded,
-    onPlaybackStateChange = () => {},
+    onPlaybackStateChange = /** @type {(isPlaying: boolean) => void} */ (() => {}),
     getDisplayName,
     getSongScore
 }) {
+    /** @type {string|null} */
     let currentPath = null;
+    /** @type {string|null} */
     let currentObjectUrl = null;
+    /** @type {'audio'|'youtube'} */
     let activePlayer = 'audio';
+    /** @type {YouTubePlayer|null} */
     let youtubePlayer = null;
+    /** @type {Promise<YouTubePlayer>|null} */
     let youtubePlayerPromise = null;
+    /** @type {ReturnType<typeof setInterval>|null} */
     let youtubeProgressHandle = null;
 
     audioPlayer.addEventListener('play', () => {
@@ -79,25 +86,41 @@ export function createPlayerController({
     audioPlayer.addEventListener('timeupdate', () => {
         if (activePlayer !== 'audio' || !audioPlayer.duration) return;
 
-        const percent = (audioPlayer.currentTime / audioPlayer.duration) * 1000;
-        seekBar.value = percent;
-        const pct = (percent / 10).toFixed(1);
-        seekBar.style.background = `linear-gradient(to right, var(--accent) ${pct}%, var(--border) ${pct}%)`;
+        updateSeekBar(audioPlayer.currentTime, audioPlayer.duration);
     });
 
     seekBar.addEventListener('input', () => {
         if (activePlayer === 'youtube') {
             if (!youtubePlayer?.getDuration) return;
             const duration = youtubePlayer.getDuration();
-            youtubePlayer.seekTo((seekBar.value / 1000) * duration, true);
+            youtubePlayer.seekTo((Number(seekBar.value) / 1000) * duration, true);
             return;
         }
 
         if (!audioPlayer.duration) return;
-        audioPlayer.currentTime = (seekBar.value / 1000) * audioPlayer.duration;
+        audioPlayer.currentTime = (Number(seekBar.value) / 1000) * audioPlayer.duration;
     });
 
     playPauseButton.addEventListener('click', () => {
+        togglePlayback();
+    });
+
+    nextButton.addEventListener('click', onNext);
+    previousButton.addEventListener('click', onPrevious);
+    audioPlayer.addEventListener('ended', () => {
+        if (activePlayer !== 'audio') return;
+        onPlaybackStateChange(false);
+        onEnded();
+    });
+
+    if (navigator.mediaSession) {
+        navigator.mediaSession.setActionHandler('nexttrack', onNext);
+        navigator.mediaSession.setActionHandler('previoustrack', onPrevious);
+        navigator.mediaSession.setActionHandler('seekforward', () => seekBy(5));
+        navigator.mediaSession.setActionHandler('seekbackward', () => seekBy(-5));
+    }
+
+    function togglePlayback() {
         if (activePlayer === 'youtube') {
             const state = youtubePlayer?.getPlayerState?.();
             if (state === window.YT?.PlayerState?.PLAYING) {
@@ -115,30 +138,43 @@ export function createPlayerController({
         }
 
         audioPlayer.pause();
-    });
-
-    nextButton.addEventListener('click', onNext);
-    previousButton.addEventListener('click', onPrevious);
-    audioPlayer.addEventListener('ended', () => {
-        if (activePlayer !== 'audio') return;
-        onPlaybackStateChange(false);
-        onEnded();
-    });
-
-    if (navigator.mediaSession) {
-        navigator.mediaSession.setActionHandler('nexttrack', onNext);
-        navigator.mediaSession.setActionHandler('previoustrack', onPrevious);
-        navigator.mediaSession.setActionHandler('seekforward', () => {
-            audioPlayer.currentTime += 5;
-        });
-        navigator.mediaSession.setActionHandler('seekbackward', () => {
-            audioPlayer.currentTime -= 5;
-        });
     }
 
     function resetSeekBar() {
-        seekBar.value = 0;
+        seekBar.value = '0';
         seekBar.style.background = 'linear-gradient(to right, var(--accent) 0%, var(--border) 0%)';
+    }
+
+    /**
+     * @param {number} currentTime
+     * @param {number} duration
+     */
+    function updateSeekBar(currentTime, duration) {
+        if (!duration) return;
+
+        const percent = (currentTime / duration) * 1000;
+        seekBar.value = String(percent);
+        const pct = (percent / 10).toFixed(1);
+        seekBar.style.background = `linear-gradient(to right, var(--accent) ${pct}%, var(--border) ${pct}%)`;
+    }
+
+    /** @param {number} seconds */
+    function seekBy(seconds) {
+        if (activePlayer === 'youtube') {
+            if (!youtubePlayer?.getDuration) return;
+
+            const duration = youtubePlayer.getDuration();
+            if (!duration) return;
+
+            const nextTime = Math.max(0, Math.min(duration, youtubePlayer.getCurrentTime() + seconds));
+            youtubePlayer.seekTo(nextTime, true);
+            updateSeekBar(nextTime, duration);
+            return;
+        }
+
+        if (!audioPlayer.duration) return;
+        audioPlayer.currentTime = Math.max(0, Math.min(audioPlayer.duration, audioPlayer.currentTime + seconds));
+        updateSeekBar(audioPlayer.currentTime, audioPlayer.duration);
     }
 
     function updateMediaSessionMetadata(title) {
@@ -187,10 +223,7 @@ export function createPlayerController({
             const duration = youtubePlayer.getDuration();
             if (!duration) return;
 
-            const percent = (youtubePlayer.getCurrentTime() / duration) * 1000;
-            seekBar.value = percent;
-            const pct = (percent / 10).toFixed(1);
-            seekBar.style.background = `linear-gradient(to right, var(--accent) ${pct}%, var(--border) ${pct}%)`;
+            updateSeekBar(youtubePlayer.getCurrentTime(), duration);
         }, 500);
     }
 
@@ -221,7 +254,7 @@ export function createPlayerController({
                 },
                 events: {
                     onReady() {
-                        resolve(youtubePlayer);
+                        resolve(/** @type {YouTubePlayer} */ (youtubePlayer));
                     },
                     onStateChange(event) {
                         if (activePlayer !== 'youtube') return;
@@ -245,7 +278,7 @@ export function createPlayerController({
 
     return {
         /**
-         * @param {File} file
+         * @param {Blob} file
          * @param {string} path
          * @returns {Promise<void>}
          */
@@ -289,6 +322,10 @@ export function createPlayerController({
         },
 
         refreshCurrentScore,
+
+        togglePlayback,
+
+        seekBy,
 
         /** @returns {string|null} */
         getCurrentPath() {

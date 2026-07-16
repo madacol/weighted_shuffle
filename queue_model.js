@@ -1,9 +1,26 @@
 import { MAX_PLAYLIST_SIZE } from './config.js';
 
+export const REPEAT_MODES = Object.freeze({
+    OFF: 'off',
+    ALL: 'all',
+    ONE: 'one'
+});
+
+const REPEAT_MODE_ORDER = [
+    REPEAT_MODES.OFF,
+    REPEAT_MODES.ALL,
+    REPEAT_MODES.ONE
+];
+
+/**
+ * @typedef {'off'|'all'|'one'} RepeatMode
+ */
+
 /**
  * @typedef {{
  *   playlist: string[],
- *   currentIndex: number
+ *   currentIndex: number,
+ *   repeatMode: RepeatMode
  * }} QueueState
  */
 
@@ -13,6 +30,7 @@ import { MAX_PLAYLIST_SIZE } from './config.js';
  *   songScores: { change(path: string, delta: number): Promise<number> },
  *   maxSize?: number,
  *   minSkipPenaltyMs?: number,
+ *   initialRepeatMode?: RepeatMode,
  *   now?: () => number
  * }} options
  */
@@ -21,11 +39,13 @@ export function createQueueModel({
     songScores,
     maxSize = MAX_PLAYLIST_SIZE,
     minSkipPenaltyMs = 5000,
+    initialRepeatMode = REPEAT_MODES.OFF,
     now = () => Date.now()
 }) {
     /** @type {string[]} */
     let playlist = [];
     let currentIndex = 0;
+    let repeatMode = normalizeRepeatMode(initialRepeatMode);
     let playStartTime = null;
     let lastEndedSong = null;
     const listeners = new Set();
@@ -34,7 +54,8 @@ export function createQueueModel({
     function getState() {
         return {
             playlist: [...playlist],
-            currentIndex
+            currentIndex,
+            repeatMode
         };
     }
 
@@ -109,6 +130,38 @@ export function createQueueModel({
         notify();
     }
 
+    /**
+     * @param {string} mode
+     * @returns {RepeatMode}
+     */
+    function normalizeRepeatMode(mode) {
+        if (REPEAT_MODE_ORDER.includes(/** @type {RepeatMode} */ (mode))) {
+            return /** @type {RepeatMode} */ (mode);
+        }
+
+        return REPEAT_MODES.OFF;
+    }
+
+    /**
+     * @param {RepeatMode} mode
+     * @returns {RepeatMode}
+     */
+    function setRepeatMode(mode) {
+        const nextMode = normalizeRepeatMode(mode);
+        if (repeatMode === nextMode) return repeatMode;
+
+        repeatMode = nextMode;
+        notify();
+        return repeatMode;
+    }
+
+    /** @returns {RepeatMode} */
+    function cycleRepeatMode() {
+        const currentModeIndex = REPEAT_MODE_ORDER.indexOf(repeatMode);
+        const nextMode = REPEAT_MODE_ORDER[(currentModeIndex + 1) % REPEAT_MODE_ORDER.length];
+        return setRepeatMode(nextMode);
+    }
+
     /** @param {number} index */
     function remove(index) {
         playlist.splice(index, 1);
@@ -119,6 +172,8 @@ export function createQueueModel({
     }
 
     function fill() {
+        if (repeatMode !== REPEAT_MODES.OFF) return;
+
         let maxTries = 10;
         let changed = false;
 
@@ -177,6 +232,10 @@ export function createQueueModel({
         }
         lastEndedSong = currentSong;
 
+        if (repeatMode === REPEAT_MODES.ONE) {
+            return playCurrent();
+        }
+
         return playNext();
     }
 
@@ -187,6 +246,8 @@ export function createQueueModel({
         reorder,
         add,
         remove,
+        setRepeatMode,
+        cycleRepeatMode,
         fill,
         playNext,
         playPrevious,

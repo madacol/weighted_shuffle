@@ -53,7 +53,14 @@ header h1 {
     background-clip: text;
 }
 
-#selectFolder {
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+#selectFolder,
+#keyboardHelp {
     padding: 8px 18px;
     border-radius: 20px;
     border: 1px solid var(--border);
@@ -63,7 +70,15 @@ header h1 {
     cursor: pointer;
     transition: all 0.2s;
 }
-#selectFolder:hover {
+#keyboardHelp {
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border-radius: 50%;
+    font-weight: 700;
+}
+#selectFolder:hover,
+#keyboardHelp:hover {
     border-color: var(--accent);
     color: var(--text-primary);
     background: var(--bg-hover);
@@ -270,6 +285,33 @@ header h1 {
     border-color: transparent transparent transparent currentColor;
 }
 
+/* Repeat button */
+#repeat::before {
+    content: '↻';
+    display: block;
+    font-size: 22px;
+    line-height: 1;
+}
+#repeat.is-active {
+    color: var(--accent);
+    background: rgba(233, 69, 96, 0.12);
+}
+#repeat[data-repeat-mode="one"]::after {
+    content: '1';
+    position: absolute;
+    right: 6px;
+    bottom: 5px;
+    min-width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 13px;
+    text-align: center;
+}
+
 /* ── Vote Controls ── */
 #vote-controls {
     display: flex;
@@ -347,6 +389,79 @@ audio { display: none; }
     background: var(--accent-hover);
 }
 
+/* ── Keyboard Shortcuts Dialog ── */
+#keyboardShortcutsDialog {
+    width: min(520px, calc(100vw - 32px));
+    padding: 0;
+    color: var(--text-primary);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    box-shadow: var(--shadow);
+}
+#keyboardShortcutsDialog::backdrop {
+    background: rgba(0, 0, 0, 0.7);
+}
+.shortcuts-dialog {
+    padding: 22px;
+}
+.shortcuts-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 16px;
+}
+.shortcuts-header h2 {
+    margin: 0;
+    font-size: 18px;
+}
+.close-dialog-btn {
+    width: 32px;
+    height: 32px;
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+.close-dialog-btn:hover {
+    border-color: var(--accent);
+    color: var(--text-primary);
+    background: var(--bg-hover);
+}
+.shortcut-list {
+    display: grid;
+    gap: 10px;
+    margin: 0;
+}
+.shortcut-list div {
+    display: grid;
+    grid-template-columns: minmax(135px, auto) 1fr;
+    gap: 12px;
+    align-items: baseline;
+}
+.shortcut-list dt,
+.shortcut-list dd {
+    margin: 0;
+}
+.shortcut-list dd {
+    color: var(--text-secondary);
+    font-size: 14px;
+}
+kbd {
+    display: inline-block;
+    min-width: 24px;
+    padding: 2px 7px;
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: 6px;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    text-align: center;
+}
+
 /* ── Responsive ── */
 @media (max-width: 768px) {
     body {
@@ -364,4 +479,8 @@ audio { display: none; }
         grid-template-columns: 1fr auto;
     }
     #vote-controls { justify-content: flex-start; }
+    .shortcut-list div {
+        grid-template-columns: 1fr;
+        gap: 4px;
+    }
 }

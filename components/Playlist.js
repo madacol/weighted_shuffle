@@ -9,7 +9,8 @@ import { getSongDisplayName } from '../media_source.js';
  *
  * @typedef {{
  *   playlist: string[],
- *   currentIndex: number
+ *   currentIndex: number,
+ *   repeatMode: 'off'|'all'|'one'
  * }} QueueState
  *
  * @typedef {{
@@ -19,6 +20,7 @@ import { getSongDisplayName } from '../media_source.js';
  *   reorder(sourceIndex: number, targetIndex: number): void,
  *   add(songPath: string, targetIndex?: number): void,
  *   remove(index: number): void,
+ *   cycleRepeatMode(): 'off'|'all'|'one',
  *   fill(): void,
  *   playNext(): string|null,
  *   playPrevious(): string|null,
@@ -27,7 +29,7 @@ import { getSongDisplayName } from '../media_source.js';
  * }} QueueModel
  */
 
-class Playlist extends HTMLElement {
+export class Playlist extends HTMLElement {
     constructor() {
         super();
         this.attachShadow({ mode: 'open' });
@@ -38,7 +40,7 @@ class Playlist extends HTMLElement {
         /** @type {(() => void)|null} */
         this._unsubscribe = null;
         /** @type {QueueState} */
-        this._state = { playlist: [], currentIndex: 0 };
+        this._state = { playlist: [], currentIndex: 0, repeatMode: 'off' };
         /** @type {boolean} */
         this._isPlaying = false;
     }
@@ -91,6 +93,11 @@ class Playlist extends HTMLElement {
                     position: relative;
                 }
                 .song-row:hover {
+                    background: var(--bg-hover, #2a2a4a);
+                }
+                .song-row:focus-visible {
+                    outline: 2px solid var(--accent, #e94560);
+                    outline-offset: 2px;
                     background: var(--bg-hover, #2a2a4a);
                 }
                 .song-row.current {
@@ -251,19 +258,29 @@ class Playlist extends HTMLElement {
         return this._state.currentIndex;
     }
 
+    /** @returns {'off'|'all'|'one'} */
+    get repeatMode() {
+        return this._state.repeatMode ?? 'off';
+    }
+
     setupDragAndDrop() {
-        const list = this.shadowRoot.querySelector('.song-list');
+        const list = /** @type {HTMLElement} */ (this.shadowRoot.querySelector('.song-list'));
         list.addEventListener('dragover', (event) => {
+            const dragEvent = /** @type {DragEvent} */ (event);
             event.preventDefault();
-            event.dataTransfer.dropEffect = 'move';
+            if (dragEvent.dataTransfer) dragEvent.dataTransfer.dropEffect = 'move';
 
             const rows = this.shadowRoot.querySelectorAll('.song-row');
             rows.forEach(r => r.classList.remove('drag-over-top', 'drag-over-bottom'));
-            const target = event.target.closest?.('.song-row') || event.composedPath().find(el => el.classList?.contains('song-row'));
+            const eventTarget = /** @type {Element|null} */ (event.target);
+            const target = /** @type {HTMLElement|null} */ (
+                eventTarget?.closest?.('.song-row')
+                || event.composedPath().find(el => el instanceof HTMLElement && el.classList.contains('song-row'))
+            );
             if (target) {
                 const rect = target.getBoundingClientRect();
                 const mid = rect.top + rect.height / 2;
-                target.classList.add(event.clientY < mid ? 'drag-over-top' : 'drag-over-bottom');
+                target.classList.add(dragEvent.clientY < mid ? 'drag-over-top' : 'drag-over-bottom');
             }
         });
 
@@ -272,13 +289,14 @@ class Playlist extends HTMLElement {
         });
 
         list.addEventListener('drop', (event) => {
+            const dragEvent = /** @type {DragEvent} */ (event);
             event.preventDefault();
             this.shadowRoot.querySelectorAll('.song-row').forEach(r => r.classList.remove('drag-over-top', 'drag-over-bottom'));
-            const songPath = event.dataTransfer.getData('text/plain');
-            const sourceIndex = event.dataTransfer.getData('source-index');
-            const targetIndex = this.getDropIndex(event);
+            const songPath = dragEvent.dataTransfer?.getData('text/plain') ?? '';
+            const sourceIndex = dragEvent.dataTransfer?.getData('source-index') ?? '';
+            const targetIndex = this.getDropIndex(dragEvent);
 
-            if (sourceIndex) {
+            if (sourceIndex !== '') {
                 this.reorderSong(parseInt(sourceIndex), targetIndex);
             } else {
                 this.addSongToPlaylist(songPath, targetIndex);
@@ -286,8 +304,9 @@ class Playlist extends HTMLElement {
         });
     }
 
+    /** @param {DragEvent} event */
     getDropIndex(event) {
-        const rows = this.shadowRoot.querySelectorAll('.song-row');
+        const rows = /** @type {NodeListOf<HTMLElement>} */ (this.shadowRoot.querySelectorAll('.song-row'));
         for (let i = 0; i < rows.length; i++) {
             const rect = rows[i].getBoundingClientRect();
             if (event.clientY < rect.top + rect.height / 2) {
@@ -309,8 +328,13 @@ class Playlist extends HTMLElement {
         this._getModel().remove(index);
     }
 
+    cycleRepeatMode() {
+        if (!this._model) return this.repeatMode;
+        return this._model.cycleRepeatMode();
+    }
+
     updatePlaylistUI() {
-        const list = this.shadowRoot?.querySelector('.song-list');
+        const list = /** @type {HTMLElement|null} */ (this.shadowRoot?.querySelector('.song-list'));
         if (!list || !this._scoreService) return;
 
         const scoreService = this._getScoreService();
@@ -336,31 +360,50 @@ class Playlist extends HTMLElement {
                 <span class="score-badge">${score}</span>
                 <button class="delete-btn" title="Remove">✕</button>
             `;
-            const name = row.querySelector('.song-name');
+            const name = /** @type {HTMLElement} */ (row.querySelector('.song-name'));
             name.title = song;
             name.textContent = getSongDisplayName(song);
-
-            row.setAttribute('draggable', 'true');
-            row.addEventListener('dragstart', (event) => {
-                event.dataTransfer.setData('text/plain', song);
-                event.dataTransfer.setData('source-index', index.toString());
-                row.style.opacity = '0.4';
-            });
-            row.addEventListener('dragend', () => { row.style.opacity = ''; });
-
-            row.querySelector('.song-name').addEventListener('click', () => {
+            const playRow = () => {
                 const songToPlay = this._getModel().select(index);
                 if (songToPlay) {
                     this._dispatchPlaySong(songToPlay);
                 }
+            };
+
+            row.setAttribute('draggable', 'true');
+            row.setAttribute('tabindex', '0');
+            row.setAttribute('role', 'button');
+            row.setAttribute('aria-label', `Play ${getSongDisplayName(song)}`);
+            row.addEventListener('dragstart', (event) => {
+                const dragEvent = /** @type {DragEvent} */ (event);
+                dragEvent.dataTransfer?.setData('text/plain', song);
+                dragEvent.dataTransfer?.setData('source-index', index.toString());
+                row.style.opacity = '0.4';
+            });
+            row.addEventListener('dragend', () => { row.style.opacity = ''; });
+
+            row.addEventListener('click', playRow);
+            row.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    playRow();
+                    return;
+                }
+
+                if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                    event.preventDefault();
+                    this._focusAdjacentSongRow(row, event.key === 'ArrowDown' ? 1 : -1);
+                    return;
+                }
+
             });
 
-            row.querySelector('.delete-btn').addEventListener('click', (e) => {
+            /** @type {HTMLButtonElement} */ (row.querySelector('.delete-btn')).addEventListener('click', (e) => {
                 e.stopPropagation();
                 this.deleteSong(index);
             });
 
-            const badge = row.querySelector('.score-badge');
+            const badge = /** @type {HTMLElement} */ (row.querySelector('.score-badge'));
             badge.addEventListener('click', (e) => {
                 e.stopPropagation();
                 this._editScore(badge, song, score);
@@ -375,23 +418,41 @@ class Playlist extends HTMLElement {
         }
     }
 
+    /**
+     * @param {HTMLElement} row
+     * @param {number} offset
+     */
+    _focusAdjacentSongRow(row, offset) {
+        const rows = Array.from(/** @type {NodeListOf<HTMLElement>} */ (this.shadowRoot.querySelectorAll('.song-row')));
+        const currentIndex = rows.indexOf(row);
+        const nextIndex = Math.max(0, Math.min(rows.length - 1, currentIndex + offset));
+        rows[nextIndex]?.focus();
+    }
+
+    /** @param {string} song */
     _dispatchPlaySong(song) {
         this.dispatchEvent(new CustomEvent('play-song', {
             detail: { song, index: this.currentIndex }
         }));
     }
 
+    /**
+     * @param {HTMLElement} badge
+     * @param {string} path
+     * @param {number} currentScore
+     */
     _editScore(badge, path, currentScore) {
         const scoreService = this._getScoreService();
         const input = document.createElement('input');
         input.type = 'number';
         input.className = 'score-input';
-        input.value = currentScore;
-        input.min = MIN_SCORE;
-        input.max = MAX_SCORE;
+        input.value = String(currentScore);
+        input.min = String(MIN_SCORE);
+        input.max = String(MAX_SCORE);
         badge.replaceWith(input);
         input.focus();
         input.select();
+        input.addEventListener('click', (e) => e.stopPropagation());
 
         const commit = async () => {
             const newScore = parseInt(input.value);
@@ -401,7 +462,7 @@ class Playlist extends HTMLElement {
             const finalScore = scoreService.get(path);
             const newBadge = document.createElement('span');
             newBadge.className = 'score-badge';
-            newBadge.textContent = finalScore;
+            newBadge.textContent = String(finalScore);
             input.replaceWith(newBadge);
             newBadge.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -411,9 +472,10 @@ class Playlist extends HTMLElement {
 
         input.addEventListener('blur', commit);
         input.addEventListener('keydown', (e) => {
+            e.stopPropagation();
             if (e.key === 'Enter') input.blur();
             if (e.key === 'Escape') {
-                input.value = currentScore;
+                input.value = String(currentScore);
                 input.blur();
             }
         });

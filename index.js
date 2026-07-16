@@ -1,6 +1,6 @@
 import { createSongRepository } from './db.js';
 import { createSongCatalogServices } from './song_catalog.js';
-import { createQueueModel } from './queue_model.js';
+import { REPEAT_MODES, createQueueModel } from './queue_model.js';
 import { createPlayerController } from './player_controller.js';
 import { rememberSelectedFolder, recallSelectedFolder } from './file_handle_store.js';
 import { scanAudioFiles, openSongFile } from './music_folder.js';
@@ -8,30 +8,54 @@ import { getSongDisplayName, getYouTubeVideoId, isYouTubeMusicLink, normalizeYou
 import './components/Library.js';
 import './components/Playlist.js';
 
+/**
+ * @template {Element} T
+ * @param {string} selector
+ * @returns {T}
+ */
+function getRequiredElement(selector) {
+    const element = document.querySelector(selector);
+    if (!element) throw new Error(`Missing required element: ${selector}`);
+    return /** @type {T} */ (element);
+}
+
 (async () => {
-    /** @type {HTMLAudioElement} */
-    const audioPlayer = document.getElementById('audioPlayer');
-    const seekBar = document.getElementById('seekBar');
-    const playPauseBtn = document.getElementById('playPause');
-    const nextBtn = document.getElementById('next');
-    const previousBtn = document.getElementById('previous');
-    const nowPlayingEl = document.getElementById('nowPlaying');
-    const nowPlayingScoreEl = document.getElementById('nowPlayingScore');
-    const upvoteBtn = document.getElementById('upvote');
-    const downvoteBtn = document.getElementById('downvote');
-    const youtubePlayerEl = document.getElementById('youtubePlayer');
-    const youtubePlayerShell = document.getElementById('youtube-player-shell');
+    const audioPlayer = /** @type {HTMLAudioElement} */ (getRequiredElement('#audioPlayer'));
+    const seekBar = /** @type {HTMLInputElement} */ (getRequiredElement('#seekBar'));
+    const playPauseBtn = /** @type {HTMLButtonElement} */ (getRequiredElement('#playPause'));
+    const nextBtn = /** @type {HTMLButtonElement} */ (getRequiredElement('#next'));
+    const previousBtn = /** @type {HTMLButtonElement} */ (getRequiredElement('#previous'));
+    const repeatBtn = /** @type {HTMLButtonElement} */ (getRequiredElement('#repeat'));
+    const nowPlayingEl = /** @type {HTMLElement} */ (getRequiredElement('#nowPlaying'));
+    const nowPlayingScoreEl = /** @type {HTMLElement} */ (getRequiredElement('#nowPlayingScore'));
+    const upvoteBtn = /** @type {HTMLButtonElement} */ (getRequiredElement('#upvote'));
+    const downvoteBtn = /** @type {HTMLButtonElement} */ (getRequiredElement('#downvote'));
+    const youtubePlayerEl = /** @type {HTMLElement} */ (getRequiredElement('#youtubePlayer'));
+    const youtubePlayerShell = /** @type {HTMLElement} */ (getRequiredElement('#youtube-player-shell'));
+    const keyboardHelpBtn = /** @type {HTMLButtonElement} */ (getRequiredElement('#keyboardHelp'));
+    const keyboardShortcutsDialog = /** @type {HTMLDialogElement} */ (getRequiredElement('#keyboardShortcutsDialog'));
+    const closeKeyboardShortcutsBtn = /** @type {HTMLButtonElement} */ (getRequiredElement('#closeKeyboardShortcuts'));
+    const selectFolderBtn = /** @type {HTMLButtonElement} */ (getRequiredElement('#selectFolder'));
+
+    const repeatModeLabels = {
+        [REPEAT_MODES.OFF]: 'Repeat off',
+        [REPEAT_MODES.ALL]: 'Repeat all',
+        [REPEAT_MODES.ONE]: 'Repeat one'
+    };
 
     /** @type {FileSystemDirectoryHandle|null} */
     let musicFolderHandle = null;
+    /** @type {string|null} */
+    let pendingYouTubeLink = null;
+    /** @type {ReturnType<typeof createSongCatalogServices>['songCatalog']|null} */
     let songCatalog = null;
+    /** @type {ReturnType<typeof createSongCatalogServices>['songScores']|null} */
     let songScores = null;
+    /** @type {(() => void)|null} */
     let unsubscribeFromScoreChanges = null;
 
-    /** @type {import('./components/Library.js').Library} */
-    const libraryComponent = document.querySelector('music-library');
-    /** @type {import('./components/Playlist.js').Playlist} */
-    const playlistComponent = document.querySelector('music-playlist');
+    const libraryComponent = /** @type {import('./components/Library.js').Library} */ (getRequiredElement('music-library'));
+    const playlistComponent = /** @type {import('./components/Playlist.js').Playlist} */ (getRequiredElement('music-playlist'));
 
     const playerController = createPlayerController({
         audioPlayer,
@@ -68,7 +92,7 @@ import './components/Playlist.js';
         console.error('Error initializing app:', err);
     }
 
-    document.getElementById('selectFolder').addEventListener('click', async () => {
+    selectFolderBtn.addEventListener('click', async () => {
         await loadMusicFolder(await window.showDirectoryPicker({ mode: 'readwrite' }));
     });
 
@@ -82,9 +106,30 @@ import './components/Playlist.js';
         animateBtn(downvoteBtn);
     });
 
-    libraryComponent.addEventListener('play-song', (event) => void playSong(event.detail.song));
-    libraryComponent.addEventListener('add-youtube-link', (event) => void addYouTubeMusicLink(event.detail.link));
-    playlistComponent.addEventListener('play-song', (event) => void playSong(event.detail.song));
+    repeatBtn.addEventListener('click', cycleRepeatMode);
+    keyboardHelpBtn.addEventListener('click', showKeyboardShortcuts);
+    closeKeyboardShortcutsBtn.addEventListener('click', () => keyboardShortcutsDialog.close());
+    keyboardShortcutsDialog.addEventListener('click', (event) => {
+        if (event.target === keyboardShortcutsDialog) {
+            keyboardShortcutsDialog.close();
+        }
+    });
+    document.addEventListener('keydown', handleGlobalKeyDown);
+
+    libraryComponent.addEventListener('add-song-to-queue', (event) => {
+        const { song } = /** @type {CustomEvent<{ song: string }>} */ (event).detail;
+        addSongToQueue(song);
+    });
+    libraryComponent.addEventListener('add-youtube-link', (event) => {
+        const { link } = /** @type {CustomEvent<{ link: string }>} */ (event).detail;
+        void addYouTubeMusicLink(link);
+    });
+    playlistComponent.addEventListener('play-song', (event) => {
+        const { song } = /** @type {CustomEvent<{ song: string }>} */ (event).detail;
+        void playSong(song);
+    });
+
+    updateRepeatButton(REPEAT_MODES.OFF);
 
     function showFolderSelectionPopover() {
         console.log('No previous folder selected. Showing popover to select a folder.');
@@ -97,7 +142,7 @@ import './components/Playlist.js';
         `;
         document.body.appendChild(popover);
 
-        const selectButton = document.getElementById('select-folder-btn');
+        const selectButton = /** @type {HTMLButtonElement} */ (getRequiredElement('#select-folder-btn'));
         selectButton.addEventListener('click', async () => {
             try {
                 const folderHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
@@ -105,7 +150,7 @@ import './components/Playlist.js';
                 popover.hidePopover();
             } catch (error) {
                 console.error('Error selecting folder:', error);
-                popover.querySelector('p').textContent = 'Failed to select folder. Try again.';
+                /** @type {HTMLParagraphElement} */ (popover.querySelector('p')).textContent = 'Failed to select folder. Try again.';
             }
         });
 
@@ -147,6 +192,7 @@ import './components/Playlist.js';
                 queueSource: services.queueSource,
                 songScores
             });
+            updateRepeatButton(playlistComponent.repeatMode);
 
             const musicFiles = await scanAudioFiles(folderHandle);
             await songCatalog.addMissing(musicFiles);
@@ -162,6 +208,12 @@ import './components/Playlist.js';
 
         await updateLibrary();
         playerController.refreshCurrentScore();
+
+        if (songCatalog && pendingYouTubeLink) {
+            const linkToAdd = pendingYouTubeLink;
+            pendingYouTubeLink = null;
+            await addYouTubeMusicLink(linkToAdd);
+        }
     }
 
     async function updateLibrary() {
@@ -170,21 +222,129 @@ import './components/Playlist.js';
     }
 
     /**
+     * @param {string} song
+     */
+    function addSongToQueue(song) {
+        if (!song) return;
+
+        try {
+            playlistComponent.addSongToPlaylist(song);
+        } catch (error) {
+            console.error('Failed to add song to queue:', error);
+        }
+    }
+
+    /**
      * @param {string} rawLink
      */
     async function addYouTubeMusicLink(rawLink) {
         if (!songCatalog) {
+            pendingYouTubeLink = rawLink;
+            libraryComponent.setYouTubeLinkStatus('Select a music folder to finish adding this YouTube link.', 'pending');
             showFolderSelectionPopover();
             return;
         }
 
         try {
+            libraryComponent.setYouTubeLinkStatus('Adding YouTube link…', 'pending');
             const link = normalizeYouTubeMusicLink(rawLink);
             await songCatalog.addMissing([link]);
+            addSongToQueue(link);
             await updateLibrary();
+            libraryComponent.clearYouTubeLinkInput();
+            libraryComponent.setYouTubeLinkStatus('Added to the library and queued.', 'success');
         } catch (error) {
             console.error('Failed to add YouTube Music link:', error);
+            const message = error instanceof Error ? error.message : 'Failed to add YouTube link.';
+            libraryComponent.setYouTubeLinkStatus(message, 'error');
         }
+    }
+
+    function cycleRepeatMode() {
+        const repeatMode = playlistComponent.cycleRepeatMode();
+        updateRepeatButton(repeatMode);
+    }
+
+    /** @param {'off'|'all'|'one'} repeatMode */
+    function updateRepeatButton(repeatMode) {
+        const label = repeatModeLabels[repeatMode] ?? repeatModeLabels[REPEAT_MODES.OFF];
+        repeatBtn.dataset.repeatMode = repeatMode;
+        repeatBtn.classList.toggle('is-active', repeatMode !== REPEAT_MODES.OFF);
+        repeatBtn.title = label;
+        repeatBtn.setAttribute('aria-label', label);
+        repeatBtn.setAttribute('aria-pressed', repeatMode === REPEAT_MODES.OFF ? 'false' : repeatMode === REPEAT_MODES.ALL ? 'true' : 'mixed');
+    }
+
+    function showKeyboardShortcuts() {
+        if (keyboardShortcutsDialog.open) return;
+
+        if (typeof keyboardShortcutsDialog.showModal === 'function') {
+            keyboardShortcutsDialog.showModal();
+            return;
+        }
+
+        keyboardShortcutsDialog.setAttribute('open', '');
+    }
+
+    function toggleKeyboardShortcuts() {
+        if (keyboardShortcutsDialog.open) {
+            keyboardShortcutsDialog.close();
+            return;
+        }
+
+        showKeyboardShortcuts();
+    }
+
+    /** @param {KeyboardEvent} event */
+    function handleGlobalKeyDown(event) {
+        if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
+        if (isEditableShortcutTarget(event)) return;
+
+        if (event.key === '?') {
+            event.preventDefault();
+            toggleKeyboardShortcuts();
+            return;
+        }
+
+        if (keyboardShortcutsDialog.open) return;
+
+        switch (event.key.toLowerCase()) {
+            case ' ':
+            case 'k':
+                event.preventDefault();
+                playerController.togglePlayback();
+                break;
+            case 'n':
+                event.preventDefault();
+                playlistComponent.playNext();
+                break;
+            case 'p':
+                event.preventDefault();
+                playlistComponent.playPrevious();
+                break;
+            case 'j':
+            case 'arrowleft':
+                event.preventDefault();
+                playerController.seekBy(-10);
+                break;
+            case 'l':
+            case 'arrowright':
+                event.preventDefault();
+                playerController.seekBy(10);
+                break;
+            case 'r':
+                event.preventDefault();
+                cycleRepeatMode();
+                break;
+        }
+    }
+
+    /** @param {KeyboardEvent} event */
+    function isEditableShortcutTarget(event) {
+        const [origin] = event.composedPath();
+        if (!(origin instanceof HTMLElement)) return false;
+
+        return origin.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(origin.tagName);
     }
 
     /**
@@ -193,6 +353,7 @@ import './components/Playlist.js';
     async function playSong(path) {
         if (isYouTubeMusicLink(path)) {
             const videoId = getYouTubeVideoId(path);
+            if (!videoId) throw new Error(`Invalid YouTube Music link: ${path}`);
             await playerController.playYouTubeVideo(videoId, path);
             playlistComponent.fillPlaylist();
             return;

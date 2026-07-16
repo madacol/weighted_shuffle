@@ -5,6 +5,6 @@
     "module": "ES2022",
     "noEmit": true
   },
-  "include": ["**/*.js"],
+  "include": ["**/*.js", "**/*.d.ts"],
   "exclude": ["node_modules", "**/node_modules/*"]
 }

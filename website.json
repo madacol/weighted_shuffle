@@ -1,6 +1,8 @@
-{
-  "subdomain": "music-player",
-  "static": {
-    "root": "."
+[
+  {
+    "subdomain": "music-player",
+    "static": {
+      "root": "."
+    }
   }
-}
+]

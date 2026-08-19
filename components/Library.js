@@ -228,6 +228,7 @@ export class Library extends HTMLElement {
         this.shadowRoot.querySelector('.search-input').addEventListener('input', (e) => {
             this._filterSongs(/** @type {HTMLInputElement} */ (e.target).value);
         });
+        this.shadowRoot.addEventListener('keydown', (event) => this._handleSongRowKeyDown(event));
     }
 
     /**
@@ -243,6 +244,20 @@ export class Library extends HTMLElement {
     clearYouTubeLinkInput() {
         const input = /** @type {HTMLInputElement|null} */ (this.shadowRoot?.querySelector('.link-input'));
         if (input) input.value = '';
+    }
+
+    focusSearch() {
+        const searchInput = /** @type {HTMLInputElement|null} */ (this.shadowRoot?.querySelector('.search-input'));
+        searchInput?.focus();
+        searchInput?.select();
+    }
+
+    focusFirstSong() {
+        this._focusSongRow(this._getVisibleSongRows()[0]);
+    }
+
+    focusLastSong() {
+        this._focusSongRow(this._getVisibleSongRows().at(-1));
     }
 
     _renderYouTubeLinkStatus() {
@@ -313,19 +328,6 @@ export class Library extends HTMLElement {
             });
 
             row.addEventListener('click', addSongToQueue);
-            row.addEventListener('keydown', (event) => {
-                if (event.key === 'Enter') {
-                    event.preventDefault();
-                    addSongToQueue();
-                    return;
-                }
-
-                if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-                    event.preventDefault();
-                    this._focusAdjacentSongRow(row, event.key === 'ArrowDown' ? 1 : -1);
-                }
-            });
-
             const badge = /** @type {HTMLElement} */ (row.querySelector('.score-badge'));
             badge.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -350,11 +352,52 @@ export class Library extends HTMLElement {
      * @param {number} offset
      */
     _focusAdjacentSongRow(row, offset) {
-        const rows = Array.from(/** @type {NodeListOf<HTMLElement>} */ (this.shadowRoot.querySelectorAll('.song-row')))
-            .filter(candidate => candidate.style.display !== 'none');
+        const rows = this._getVisibleSongRows();
         const currentIndex = rows.indexOf(row);
         const nextIndex = Math.max(0, Math.min(rows.length - 1, currentIndex + offset));
-        rows[nextIndex]?.focus();
+        this._focusSongRow(rows[nextIndex]);
+    }
+
+    /** @returns {HTMLElement[]} */
+    _getVisibleSongRows() {
+        return Array.from(/** @type {NodeListOf<HTMLElement>} */ (this.shadowRoot.querySelectorAll('.song-row')))
+            .filter(candidate => candidate.style.display !== 'none');
+    }
+
+    /** @param {HTMLElement|undefined} row */
+    _focusSongRow(row) {
+        row?.focus();
+        row?.scrollIntoView({ block: 'nearest' });
+    }
+
+    /** @param {KeyboardEvent} event */
+    _handleSongRowKeyDown(event) {
+        const target = /** @type {HTMLElement|null} */ (event.target instanceof HTMLElement ? event.target : null);
+        const row = target?.closest('.song-row');
+        if (!row) return;
+
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            this._dispatchAddSongToQueue(row.dataset.path ?? '');
+            return;
+        }
+
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            this._focusAdjacentSongRow(row, event.key === 'ArrowDown' ? 1 : -1);
+            return;
+        }
+
+        if (event.key === 'Home') {
+            event.preventDefault();
+            this._focusSongRow(this._getVisibleSongRows()[0]);
+            return;
+        }
+
+        if (event.key === 'End') {
+            event.preventDefault();
+            this._focusSongRow(this._getVisibleSongRows().at(-1));
+        }
     }
 
     /**

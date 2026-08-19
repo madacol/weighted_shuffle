@@ -212,6 +212,7 @@ export class Playlist extends HTMLElement {
             <div class="panel-header">Queue</div>
             <div class="song-list"></div>
         `;
+        this.shadowRoot.addEventListener('keydown', (event) => this._handleSongRowKeyDown(event));
     }
 
     /** @param {SongScoreService} scoreService */
@@ -261,6 +262,11 @@ export class Playlist extends HTMLElement {
     /** @returns {'off'|'all'|'one'} */
     get repeatMode() {
         return this._state.repeatMode ?? 'off';
+    }
+
+    focusCurrentSong() {
+        const rows = this._getSongRows();
+        this._focusSongRow(rows[this.currentIndex] ?? rows[0]);
     }
 
     setupDragAndDrop() {
@@ -383,21 +389,6 @@ export class Playlist extends HTMLElement {
             row.addEventListener('dragend', () => { row.style.opacity = ''; });
 
             row.addEventListener('click', playRow);
-            row.addEventListener('keydown', (event) => {
-                if (event.key === 'Enter') {
-                    event.preventDefault();
-                    playRow();
-                    return;
-                }
-
-                if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-                    event.preventDefault();
-                    this._focusAdjacentSongRow(row, event.key === 'ArrowDown' ? 1 : -1);
-                    return;
-                }
-
-            });
-
             /** @type {HTMLButtonElement} */ (row.querySelector('.delete-btn')).addEventListener('click', (e) => {
                 e.stopPropagation();
                 this.deleteSong(index);
@@ -423,10 +414,55 @@ export class Playlist extends HTMLElement {
      * @param {number} offset
      */
     _focusAdjacentSongRow(row, offset) {
-        const rows = Array.from(/** @type {NodeListOf<HTMLElement>} */ (this.shadowRoot.querySelectorAll('.song-row')));
+        const rows = this._getSongRows();
         const currentIndex = rows.indexOf(row);
         const nextIndex = Math.max(0, Math.min(rows.length - 1, currentIndex + offset));
-        rows[nextIndex]?.focus();
+        this._focusSongRow(rows[nextIndex]);
+    }
+
+    /** @returns {HTMLElement[]} */
+    _getSongRows() {
+        return Array.from(/** @type {NodeListOf<HTMLElement>} */ (this.shadowRoot.querySelectorAll('.song-row')));
+    }
+
+    /** @param {HTMLElement|undefined} row */
+    _focusSongRow(row) {
+        row?.focus();
+        row?.scrollIntoView({ block: 'nearest' });
+    }
+
+    /** @param {KeyboardEvent} event */
+    _handleSongRowKeyDown(event) {
+        const target = /** @type {HTMLElement|null} */ (event.target instanceof HTMLElement ? event.target : null);
+        const row = target?.closest('.song-row');
+        if (!row) return;
+
+        const rowIndex = this._getSongRows().indexOf(row);
+        if (rowIndex === -1) return;
+
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            const songToPlay = this._getModel().select(rowIndex);
+            if (songToPlay) this._dispatchPlaySong(songToPlay);
+            return;
+        }
+
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            this._focusAdjacentSongRow(row, event.key === 'ArrowDown' ? 1 : -1);
+            return;
+        }
+
+        if (event.key === 'Home') {
+            event.preventDefault();
+            this._focusSongRow(this._getSongRows()[0]);
+            return;
+        }
+
+        if (event.key === 'End') {
+            event.preventDefault();
+            this._focusSongRow(this._getSongRows().at(-1));
+        }
     }
 
     /** @param {string} song */

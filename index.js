@@ -336,6 +336,37 @@ function getRequiredElement(selector) {
                 event.preventDefault();
                 cycleRepeatMode();
                 break;
+            case 'f':
+            case '/':
+                event.preventDefault();
+                libraryComponent.focusSearch();
+                break;
+            case 'q':
+                event.preventDefault();
+                playlistComponent.focusCurrentSong();
+                break;
+            case 'g':
+                event.preventDefault();
+                if (event.shiftKey) {
+                    libraryComponent.focusLastSong();
+                } else {
+                    libraryComponent.focusFirstSong();
+                }
+                break;
+            case 'u':
+            case '=':
+            case '+':
+                event.preventDefault();
+                void playlistComponent.updateCurrentSongScore(1);
+                animateBtn(upvoteBtn);
+                break;
+            case 'd':
+            case '-':
+            case '_':
+                event.preventDefault();
+                void playlistComponent.updateCurrentSongScore(-1);
+                animateBtn(downvoteBtn);
+                break;
         }
     }
 
